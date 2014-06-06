@@ -11,14 +11,11 @@ import (
 )
 
 var (
-	// DefaultUpgrader specifies the paramaters for upgrading an HTTP connection to
-	// a WebSocket connection.
+	// DefaultUpgrader specifies the paramaters for upgrading an HTTP
+	// connection to a WebSocket connection.
 	DefaultUpgrader = &websocket.Upgrader{
-		ReadBufferSize:  4096,
-		WriteBufferSize: 4096,
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
 	}
 
 	// DefaultDialer is a dialer with all fields set to the default zero values.
@@ -45,7 +42,7 @@ type WebsocketProxy struct {
 // request to the given target.
 func ProxyHandler(target *url.URL) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		NewProxy(target).ServerHTTP(rw, req)
+		NewProxy(target).ServeHTTP(rw, req)
 	})
 }
 
@@ -56,8 +53,8 @@ func NewProxy(target *url.URL) *WebsocketProxy {
 	return &WebsocketProxy{Backend: backend}
 }
 
-// ServerHTTP implements the http.Handler that proxies WebSocket connections.
-func (w *WebsocketProxy) ServerHTTP(rw http.ResponseWriter, req *http.Request) {
+// ServeHTTP implements the http.Handler that proxies WebSocket connections.
+func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	upgrader := w.Upgrader
 	if w.Upgrader == nil {
 		upgrader = DefaultUpgrader
@@ -92,5 +89,6 @@ func (w *WebsocketProxy) ServerHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	go cp(connBackend.UnderlyingConn(), connPub.UnderlyingConn())
 	go cp(connPub.UnderlyingConn(), connBackend.UnderlyingConn())
-	<-errc
+	err = <-errc
+	log.Println("websocketproxy: connection ended %s", err)
 }

@@ -15,15 +15,22 @@ var (
 	backendURL = "ws://127.0.0.1:8888"
 )
 
-func ProxyFunc(w http.ResponseWriter, r *http.Request) {
-	u, _ := url.Parse("ws://127.0.0.1:8888")
-	ProxyHandler(u).ServeHTTP(w, r)
-}
-
 func TestProxy(t *testing.T) {
 	// websocket proxy
+	upgrader := &websocket.Upgrader{
+		ReadBufferSize:  4096,
+		WriteBufferSize: 4096,
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
+
+	u, _ := url.Parse(backendURL)
+	proxy := NewProxy(u)
+	proxy.Upgrader = upgrader
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/proxy", ProxyFunc)
+	mux.Handle("/proxy", proxy)
 	go func() {
 		if err := http.ListenAndServe(":7777", mux); err != nil {
 			t.Fatal("ListenAndServe: ", err)
@@ -36,7 +43,7 @@ func TestProxy(t *testing.T) {
 	go func() {
 		mux2 := http.NewServeMux()
 		mux2.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			conn, err := DefaultUpgrader.Upgrade(w, r, nil)
+			conn, err := upgrader.Upgrade(w, r, nil)
 			if err != nil {
 				log.Println(err)
 				return
