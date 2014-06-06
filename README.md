@@ -10,13 +10,9 @@ into your existing Go webserver to provide WebSocket reverse proxy.
 go get github.com/koding/websocketproxy
 ```
 
-## Usage
+## Example
 
 Below is a simple app that runs on a server and proxies to the given backend url
-
-```bash
-go run proxy.go -backend ws://example.com -port 80
-```
 
 ```go
 package main
@@ -46,3 +42,11 @@ func main() {
 	}
 }
 ```
+
+Save it as `proxy.go` and run as:
+
+
+```bash
+go run proxy.go -backend ws://example.com -port 80
+```
+

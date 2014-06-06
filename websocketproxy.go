@@ -36,7 +36,8 @@ type WebsocketProxy struct {
 	// WebSocket connection. If nil, DefaultUpgrader is used.
 	Upgrader *websocket.Upgrader
 
-	//  Dialer contains options for connecting to WebSocket server.
+	//  Dialer contains options for connecting to WebSocket server. If nil,
+	//  DefaultDialer is used.
 	Dialer *websocket.Dialer
 }
 
