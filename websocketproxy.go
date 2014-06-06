@@ -4,8 +4,10 @@ package websocketproxy
 import (
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/gorilla/websocket"
 )
@@ -63,8 +65,6 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		dialer = DefaultDialer
 	}
 
-	// TODO: Also consider adding  x-fowarded-for and x-forwarded-proto headers.
-
 	// Pass headers from the incoming request to the dialer to forward them to
 	// the final destinations.
 	h := http.Header{}
@@ -76,6 +76,27 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	cookies := req.Header["Cookie"]
 	for _, cookie := range cookies {
 		h.Add("Cookie", cookie)
+	}
+
+	// Pass X-Forwarded-For headers too, code below is a part of
+	// httputil.ReverseProxy. See http://en.wikipedia.org/wiki/X-Forwarded-For
+	// for more information
+	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+		// If we aren't the first proxy retain prior
+		// X-Forwarded-For information as a comma+space
+		// separated list and fold multiple headers into one.
+		if prior, ok := req.Header["X-Forwarded-For"]; ok {
+			clientIP = strings.Join(prior, ", ") + ", " + clientIP
+		}
+		h.Set("X-Forwarded-For", clientIP)
+	}
+
+	// Set the originating protol of the incoming HTTP request. The SSL might
+	// be terminated on our site and because we doing proxy adding this would
+	// be helpful for applications on the backedn.
+	h.Set("X-Forwarded-Proto", "http")
+	if req.TLS != nil {
+		h.Set("X-Forwarded-Proto", "https")
 	}
 
 	// Connect to the backend url, also pass the headers we prepared above.
