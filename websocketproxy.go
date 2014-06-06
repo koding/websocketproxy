@@ -63,6 +63,8 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		dialer = DefaultDialer
 	}
 
+	// TODO: Also consider adding  x-fowarded-for and x-forwarded-proto headers.
+
 	// Pass headers from the incoming request to the dialer to forward them to
 	// the final destinations.
 	h := http.Header{}
@@ -90,13 +92,13 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	// Only pass those headers to the upgrader.
-	respHeader := http.Header{}
-	resp.Header.Add("Sec-WebSocket-Protocol", resp.Header.Get("Sec-WebSocket-Protocol"))
-	resp.Header.Add("Set-Cookie", resp.Header.Get("Set-Cookie"))
+	upgradeHeader := http.Header{}
+	upgradeHeader.Add("Sec-WebSocket-Protocol", resp.Header.Get("Sec-WebSocket-Protocol"))
+	upgradeHeader.Add("Set-Cookie", resp.Header.Get("Set-Cookie"))
 
 	// Now upgrade the existing incoming request to a WebSocket connection.
-	// Also pass the responseHeader that we gathered from the Dial handshake.
-	connPub, err := upgrader.Upgrade(rw, req, respHeader)
+	// Also pass the header that we gathered from the Dial handshake.
+	connPub, err := upgrader.Upgrade(rw, req, upgradeHeader)
 	if err != nil {
 		log.Printf("websocketproxy: couldn't upgrade %s\n", err)
 		return
@@ -109,7 +111,7 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		errc <- err
 	}
 
-	// Start our proxy now, after we setup everything.
+	// Start our proxy now, everything is ready...
 	go cp(connBackend.UnderlyingConn(), connPub.UnderlyingConn())
 	go cp(connPub.UnderlyingConn(), connBackend.UnderlyingConn())
 	<-errc
