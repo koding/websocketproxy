@@ -65,7 +65,7 @@ func (w *WebsocketProxy) ServerHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	connPub, err := upgrader.Upgrade(rw, req, nil)
 	if err != nil {
-		log.Println("websocketproxy: couldn't upgrade %s", err)
+		log.Printf("websocketproxy: couldn't upgrade %s\n", err)
 		return
 	}
 	defer connPub.Close()
@@ -79,7 +79,7 @@ func (w *WebsocketProxy) ServerHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	connKite, _, err := dialer.Dial(backendURL.String(), nil)
 	if err != nil {
-		log.Println("websocketproxy: couldn't dial to remote backend url %s", err)
+		log.Printf("websocketproxy: couldn't dial to remote backend url %s\n", err)
 		return
 	}
 	defer connKite.Close()
