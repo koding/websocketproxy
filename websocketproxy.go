@@ -45,7 +45,7 @@ func NewProxy(target *url.URL) *WebsocketProxy {
 func (w *WebsocketProxy) ServerHTTP(rw http.ResponseWriter, req *http.Request) {
 	connPub, err := upgrader.Upgrade(rw, req, nil)
 	if err != nil {
-		log.Println(err)
+		log.Println("websocketproxy: couldn't upgrade %s", err)
 		return
 	}
 	defer connPub.Close()
@@ -54,7 +54,7 @@ func (w *WebsocketProxy) ServerHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	connKite, _, err := websocket.DefaultDialer.Dial(backendURL.String(), nil)
 	if err != nil {
-		log.Println("websocket.Dialer", err)
+		log.Println("websocketproxy: couldn't dial to remote backend url %s", err)
 		return
 	}
 	defer connKite.Close()
