@@ -56,18 +56,6 @@ func NewProxy(target *url.URL) *WebsocketProxy {
 
 // ServeHTTP implements the http.Handler that proxies WebSocket connections.
 func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	upgrader := w.Upgrader
-	if w.Upgrader == nil {
-		upgrader = DefaultUpgrader
-	}
-
-	connPub, err := upgrader.Upgrade(rw, req, nil)
-	if err != nil {
-		log.Printf("websocketproxy: couldn't upgrade %s\n", err)
-		return
-	}
-	defer connPub.Close()
-
 	backendURL := w.Backend(req)
 
 	dialer := w.Dialer
@@ -75,12 +63,40 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		dialer = DefaultDialer
 	}
 
-	connBackend, _, err := dialer.Dial(backendURL.String(), nil)
+	// Pass headers from the incoming request to the dialer to forward them to
+	// the final destinations.
+	h := http.Header{}
+	h.Add("Origin", req.Header.Get("Origin"))
+	protocols := req.Header["Sec-WebSocket-Protocol"]
+	for _, prot := range protocols {
+		h.Add("Sec-WebSocket-Protocol", prot)
+	}
+	cookies := req.Header["Cookie"]
+	for _, cookie := range cookies {
+		h.Add("Cookie", cookie)
+	}
+
+	// Connect to the backend url, also pass the headers we prepared above.
+	connBackend, resp, err := dialer.Dial(backendURL.String(), h)
 	if err != nil {
 		log.Printf("websocketproxy: couldn't dial to remote backend url %s\n", err)
 		return
 	}
 	defer connBackend.Close()
+
+	upgrader := w.Upgrader
+	if w.Upgrader == nil {
+		upgrader = DefaultUpgrader
+	}
+
+	// Now upgrade the existing incoming request to a WebSocket connection.
+	// Also pass the responseHeader that we gathered from the Dial handshake.
+	connPub, err := upgrader.Upgrade(rw, req, resp.Header)
+	if err != nil {
+		log.Printf("websocketproxy: couldn't upgrade %s\n", err)
+		return
+	}
+	defer connPub.Close()
 
 	errc := make(chan error, 2)
 	cp := func(dst io.Writer, src io.Reader) {
@@ -88,6 +104,7 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		errc <- err
 	}
 
+	// Start our proxy now, after we setup everything.
 	go cp(connBackend.UnderlyingConn(), connPub.UnderlyingConn())
 	go cp(connPub.UnderlyingConn(), connBackend.UnderlyingConn())
 	<-errc
