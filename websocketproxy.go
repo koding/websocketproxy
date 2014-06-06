@@ -26,8 +26,9 @@ var (
 // connection and proxies it to another server.
 type WebsocketProxy struct {
 	// Backend returns the backend URL which the proxy uses to reverse proxy
-	// the incoming websocket connection.
-	Backend func() *url.URL
+	// the incoming websocket connection. Request is the initial incoming and
+	// unmodified request.
+	Backend func(*http.Request) *url.URL
 
 	// Upgrader specifies the paramaters for upgrading an HTTP connection to a
 	// WebSocket connection. If nil, DefaultUpgrader is used.
@@ -49,7 +50,7 @@ func ProxyHandler(target *url.URL) http.Handler {
 // NewProxy returns a new Websocket reverse proxy that rewrites the
 // URL's to the scheme, host and base path provider in target.
 func NewProxy(target *url.URL) *WebsocketProxy {
-	backend := func() *url.URL { return target }
+	backend := func(r *http.Request) *url.URL { return target }
 	return &WebsocketProxy{Backend: backend}
 }
 
@@ -67,7 +68,7 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	defer connPub.Close()
 
-	backendURL := w.Backend()
+	backendURL := w.Backend(req)
 
 	dialer := w.Dialer
 	if w.Dialer == nil {
