@@ -89,9 +89,14 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		upgrader = DefaultUpgrader
 	}
 
+	// Only pass those headers to the upgrader.
+	respHeader := http.Header{}
+	resp.Header.Add("Sec-WebSocket-Protocol", resp.Header.Get("Sec-WebSocket-Protocol"))
+	resp.Header.Add("Set-Cookie", resp.Header.Get("Set-Cookie"))
+
 	// Now upgrade the existing incoming request to a WebSocket connection.
 	// Also pass the responseHeader that we gathered from the Dial handshake.
-	connPub, err := upgrader.Upgrade(rw, req, resp.Header)
+	connPub, err := upgrader.Upgrade(rw, req, respHeader)
 	if err != nil {
 		log.Printf("websocketproxy: couldn't upgrade %s\n", err)
 		return
