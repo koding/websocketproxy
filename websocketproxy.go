@@ -10,20 +10,34 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+var (
+	// DefaultUpgrader specifies the paramaters for upgrading an HTTP connection to
+	// a WebSocket connection.
+	DefaultUpgrader = &websocket.Upgrader{
+		ReadBufferSize:  4096,
+		WriteBufferSize: 4096,
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
+
+	// DefaultDialer is a dialer with all fields set to the default zero values.
+	DefaultDialer = websocket.DefaultDialer
+)
+
 // WebsocketProxy is an HTTP Handler that takes an incoming websocket
 // connection and proxies it to another server.
 type WebsocketProxy struct {
 	// Backend returns the backend URL which the proxy uses to reverse proxy
 	// the incoming websocket connection.
 	Backend func() *url.URL
-}
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  4096,
-	WriteBufferSize: 4096,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+	// Upgrader specifies the paramaters for upgrading an HTTP connection to a
+	// WebSocket connection. If nil, DefaultUpgrader is used.
+	Upgrader *websocket.Upgrader
+
+	//  Dialer contains options for connecting to WebSocket server.
+	Dialer *websocket.Dialer
 }
 
 // ProxyHandler returns a new http.Handler interface that reverse proxies the
@@ -43,6 +57,11 @@ func NewProxy(target *url.URL) *WebsocketProxy {
 
 // ServerHTTP implements the http.Handler that proxies WebSocket connections.
 func (w *WebsocketProxy) ServerHTTP(rw http.ResponseWriter, req *http.Request) {
+	upgrader := w.Upgrader
+	if w.Upgrader == nil {
+		upgrader = DefaultUpgrader
+	}
+
 	connPub, err := upgrader.Upgrade(rw, req, nil)
 	if err != nil {
 		log.Println("websocketproxy: couldn't upgrade %s", err)
@@ -52,7 +71,12 @@ func (w *WebsocketProxy) ServerHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	backendURL := w.Backend()
 
-	connKite, _, err := websocket.DefaultDialer.Dial(backendURL.String(), nil)
+	dialer := w.Dialer
+	if w.Dialer == nil {
+		dialer = DefaultDialer
+	}
+
+	connKite, _, err := dialer.Dial(backendURL.String(), nil)
 	if err != nil {
 		log.Println("websocketproxy: couldn't dial to remote backend url %s", err)
 		return

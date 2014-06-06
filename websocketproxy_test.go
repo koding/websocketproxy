@@ -36,7 +36,7 @@ func TestProxy(t *testing.T) {
 	go func() {
 		mux2 := http.NewServeMux()
 		mux2.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			conn, err := upgrader.Upgrade(w, r, nil)
+			conn, err := DefaultUpgrader.Upgrade(w, r, nil)
 			if err != nil {
 				log.Println(err)
 				return
