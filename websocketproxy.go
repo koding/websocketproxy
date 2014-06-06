@@ -77,12 +77,12 @@ func (w *WebsocketProxy) ServerHTTP(rw http.ResponseWriter, req *http.Request) {
 		dialer = DefaultDialer
 	}
 
-	connKite, _, err := dialer.Dial(backendURL.String(), nil)
+	connBackend, _, err := dialer.Dial(backendURL.String(), nil)
 	if err != nil {
 		log.Printf("websocketproxy: couldn't dial to remote backend url %s\n", err)
 		return
 	}
-	defer connKite.Close()
+	defer connBackend.Close()
 
 	errc := make(chan error, 2)
 	cp := func(dst io.Writer, src io.Reader) {
@@ -90,7 +90,7 @@ func (w *WebsocketProxy) ServerHTTP(rw http.ResponseWriter, req *http.Request) {
 		errc <- err
 	}
 
-	go cp(connKite.UnderlyingConn(), connPub.UnderlyingConn())
-	go cp(connPub.UnderlyingConn(), connKite.UnderlyingConn())
+	go cp(connBackend.UnderlyingConn(), connPub.UnderlyingConn())
+	go cp(connPub.UnderlyingConn(), connBackend.UnderlyingConn())
 	<-errc
 }
