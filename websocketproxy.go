@@ -30,17 +30,18 @@ var upgrader = websocket.Upgrader{
 // request to the given target.
 func ProxyHandler(target *url.URL) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		NewWebsocketProxy(target).ServerHTTP(rw, req)
+		NewProxy(target).ServerHTTP(rw, req)
 	})
 }
 
-// NewWebsocketProxy returns a new Websocket ReverseProxy that rewrites the
+// NewProxy returns a new Websocket reverse proxy that rewrites the
 // URL's to the scheme, host and base path provider in target.
-func NewWebsocketProxy(target *url.URL) *WebsocketProxy {
+func NewProxy(target *url.URL) *WebsocketProxy {
 	backend := func() *url.URL { return target }
 	return &WebsocketProxy{Backend: backend}
 }
 
+// ServerHTTP implements the http.Handler that proxies WebSocket connections.
 func (w *WebsocketProxy) ServerHTTP(rw http.ResponseWriter, req *http.Request) {
 	connPub, err := upgrader.Upgrade(rw, req, nil)
 	if err != nil {
