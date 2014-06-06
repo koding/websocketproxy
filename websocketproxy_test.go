@@ -5,12 +5,13 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 var (
-	serverURL  = "ws://localhost:7777"
+	serverURL  = "ws://127.0.0.1:7777"
 	backendURL = "ws://127.0.0.1:8888"
 )
 
@@ -28,6 +29,8 @@ func TestProxy(t *testing.T) {
 			t.Fatal("ListenAndServe: ", err)
 		}
 	}()
+
+	time.Sleep(time.Millisecond * 100)
 
 	// backend echo server
 	go func() {
@@ -53,8 +56,9 @@ func TestProxy(t *testing.T) {
 		if err != nil {
 			t.Fatal("ListenAndServe: ", err)
 		}
-
 	}()
+
+	time.Sleep(time.Millisecond * 100)
 
 	// frontend server, dial now our proxy, which will reverse proxy our
 	// message to the backend websocket server.
