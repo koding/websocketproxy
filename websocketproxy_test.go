@@ -83,6 +83,6 @@ func TestProxy(t *testing.T) {
 	}
 
 	if msg != string(p) {
-		t.Error("expecting: %s, got: %s", msg, string(p))
+		t.Errorf("expecting: %s, got: %s", msg, string(p))
 	}
 }
