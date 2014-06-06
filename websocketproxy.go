@@ -100,6 +100,8 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	// Connect to the backend url, also pass the headers we prepared above.
+	// TODO: support multiplexing on the same backend connection instead of
+	// opening a new TCP connection time for each request.
 	connBackend, resp, err := dialer.Dial(backendURL.String(), h)
 	if err != nil {
 		log.Printf("websocketproxy: couldn't dial to remote backend url %s\n", err)
