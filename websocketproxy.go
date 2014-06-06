@@ -89,6 +89,5 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	go cp(connBackend.UnderlyingConn(), connPub.UnderlyingConn())
 	go cp(connPub.UnderlyingConn(), connBackend.UnderlyingConn())
-	err = <-errc
-	log.Println("websocketproxy: connection ended %s", err)
+	<-errc
 }
