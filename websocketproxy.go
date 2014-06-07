@@ -80,11 +80,11 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// the final destinations.
 	h := http.Header{}
 	h.Add("Origin", req.Header.Get("Origin"))
-	protocols := req.Header["Sec-WebSocket-Protocol"]
+	protocols := req.Header[http.CanonicalHeaderKey("Sec-WebSocket-Protocol")]
 	for _, prot := range protocols {
 		h.Add("Sec-WebSocket-Protocol", prot)
 	}
-	cookies := req.Header["Cookie"]
+	cookies := req.Header[http.CanonicalHeaderKey("Cookie")]
 	for _, cookie := range cookies {
 		h.Add("Cookie", cookie)
 	}
@@ -114,7 +114,8 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// Connect to the backend URL, also pass the headers we prepared above.
 	// TODO: support multiplexing on the same backend connection instead of
 	// opening a new TCP connection time for each request. This should be
-	// optional.
+	// optional:
+	// http://tools.ietf.org/html/draft-ietf-hybi-websocket-multiplexing-01
 	connBackend, resp, err := dialer.Dial(backendURL.String(), h)
 	if err != nil {
 		log.Printf("websocketproxy: couldn't dial to remote backend url %s\n", err)
@@ -129,8 +130,10 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// Only pass those headers to the upgrader.
 	upgradeHeader := http.Header{}
-	upgradeHeader.Add("Sec-WebSocket-Protocol", resp.Header.Get("Sec-WebSocket-Protocol"))
-	upgradeHeader.Add("Set-Cookie", resp.Header.Get("Set-Cookie"))
+	upgradeHeader.Set("Sec-WebSocket-Protocol",
+		resp.Header.Get(http.CanonicalHeaderKey("Sec-WebSocket-Protocol")))
+	upgradeHeader.Set("Set-Cookie",
+		resp.Header.Get(http.CanonicalHeaderKey("Set-Cookie")))
 
 	// Now upgrade the existing incoming request to a WebSocket connection.
 	// Also pass the header that we gathered from the Dial handshake.
