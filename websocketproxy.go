@@ -78,15 +78,13 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// Pass headers from the incoming request to the dialer to forward them to
 	// the final destinations.
-	h := http.Header{}
-	h.Add("Origin", req.Header.Get("Origin"))
-	protocols := req.Header[http.CanonicalHeaderKey("Sec-WebSocket-Protocol")]
-	for _, prot := range protocols {
-		h.Add("Sec-WebSocket-Protocol", prot)
+	requestHeader := http.Header{}
+	requestHeader.Add("Origin", req.Header.Get("Origin"))
+	for _, prot := range req.Header[http.CanonicalHeaderKey("Sec-WebSocket-Protocol")] {
+		requestHeader.Add("Sec-WebSocket-Protocol", prot)
 	}
-	cookies := req.Header[http.CanonicalHeaderKey("Cookie")]
-	for _, cookie := range cookies {
-		h.Add("Cookie", cookie)
+	for _, cookie := range req.Header[http.CanonicalHeaderKey("Cookie")] {
+		requestHeader.Add("Cookie", cookie)
 	}
 
 	// Pass X-Forwarded-For headers too, code below is a part of
@@ -100,23 +98,24 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		if prior, ok := req.Header["X-Forwarded-For"]; ok {
 			clientIP = strings.Join(prior, ", ") + ", " + clientIP
 		}
-		h.Set("X-Forwarded-For", clientIP)
+		requestHeader.Set("X-Forwarded-For", clientIP)
 	}
 
 	// Set the originating protocol of the incoming HTTP request. The SSL might
 	// be terminated on our site and because we doing proxy adding this would
 	// be helpful for applications on the backend.
-	h.Set("X-Forwarded-Proto", "http")
+	requestHeader.Set("X-Forwarded-Proto", "http")
 	if req.TLS != nil {
-		h.Set("X-Forwarded-Proto", "https")
+		requestHeader.Set("X-Forwarded-Proto", "https")
 	}
 
-	// Connect to the backend URL, also pass the headers we prepared above.
+	// Connect to the backend URL, also pass the headers we get from the requst
+	// together with the Forwarded headers we prepared above.
 	// TODO: support multiplexing on the same backend connection instead of
 	// opening a new TCP connection time for each request. This should be
 	// optional:
 	// http://tools.ietf.org/html/draft-ietf-hybi-websocket-multiplexing-01
-	connBackend, resp, err := dialer.Dial(backendURL.String(), h)
+	connBackend, resp, err := dialer.Dial(backendURL.String(), requestHeader)
 	if err != nil {
 		log.Printf("websocketproxy: couldn't dial to remote backend url %s\n", err)
 		return
