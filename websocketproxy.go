@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	// DefaultUpgrader specifies the paramaters for upgrading an HTTP
+	// DefaultUpgrader specifies the parameters for upgrading an HTTP
 	// connection to a WebSocket connection.
 	DefaultUpgrader = &websocket.Upgrader{
 		ReadBufferSize:  1024,
@@ -24,15 +24,15 @@ var (
 	DefaultDialer = websocket.DefaultDialer
 )
 
-// WebsocketProxy is an HTTP Handler that takes an incoming websocket
+// WebsocketProxy is an HTTP Handler that takes an incoming WebSocket
 // connection and proxies it to another server.
 type WebsocketProxy struct {
 	// Backend returns the backend URL which the proxy uses to reverse proxy
-	// the incoming websocket connection. Request is the initial incoming and
+	// the incoming WebSocket connection. Request is the initial incoming and
 	// unmodified request.
 	Backend func(*http.Request) *url.URL
 
-	// Upgrader specifies the paramaters for upgrading an HTTP connection to a
+	// Upgrader specifies the parameters for upgrading an HTTP connection to a
 	// WebSocket connection. If nil, DefaultUpgrader is used.
 	Upgrader *websocket.Upgrader
 
@@ -54,6 +54,9 @@ func ProxyHandler(target *url.URL) http.Handler {
 func NewProxy(target *url.URL) *WebsocketProxy {
 	backend := func(r *http.Request) *url.URL { return target }
 	return &WebsocketProxy{Backend: backend}
+}
+
+func (w *WebsocketProxy) CloseNotify() {
 }
 
 // ServeHTTP implements the http.Handler that proxies WebSocket connections.
@@ -91,15 +94,15 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		h.Set("X-Forwarded-For", clientIP)
 	}
 
-	// Set the originating protol of the incoming HTTP request. The SSL might
+	// Set the originating protocol of the incoming HTTP request. The SSL might
 	// be terminated on our site and because we doing proxy adding this would
-	// be helpful for applications on the backedn.
+	// be helpful for applications on the backend.
 	h.Set("X-Forwarded-Proto", "http")
 	if req.TLS != nil {
 		h.Set("X-Forwarded-Proto", "https")
 	}
 
-	// Connect to the backend url, also pass the headers we prepared above.
+	// Connect to the backend URL, also pass the headers we prepared above.
 	// TODO: support multiplexing on the same backend connection instead of
 	// opening a new TCP connection time for each request.
 	connBackend, resp, err := dialer.Dial(backendURL.String(), h)
