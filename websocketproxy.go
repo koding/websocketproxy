@@ -89,6 +89,7 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// Pass X-Forwarded-For headers too, code below is a part of
 	// httputil.ReverseProxy. See http://en.wikipedia.org/wiki/X-Forwarded-For
 	// for more information
+	// TODO: use RFC7239 http://tools.ietf.org/html/rfc7239
 	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
 		// If we aren't the first proxy retain prior
 		// X-Forwarded-For information as a comma+space
@@ -109,7 +110,8 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// Connect to the backend URL, also pass the headers we prepared above.
 	// TODO: support multiplexing on the same backend connection instead of
-	// opening a new TCP connection time for each request.
+	// opening a new TCP connection time for each request. This should be
+	// optional.
 	connBackend, resp, err := dialer.Dial(backendURL.String(), h)
 	if err != nil {
 		log.Printf("websocketproxy: couldn't dial to remote backend url %s\n", err)
