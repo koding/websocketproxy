@@ -56,15 +56,18 @@ func NewProxy(target *url.URL) *WebsocketProxy {
 	return &WebsocketProxy{Backend: backend}
 }
 
-func (w *WebsocketProxy) CloseNotify() {
-}
-
 // ServeHTTP implements the http.Handler that proxies WebSocket connections.
 func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	if w.Backend == nil {
+		log.Println("websocketproxy: backend function is not defined")
+		http.Error(rw, "internal server error (code: 1)", http.StatusInternalServerError)
+		return
+	}
+
 	backendURL := w.Backend(req)
 	if backendURL == nil {
 		log.Println("websocketproxy: backend URL is nil")
-		http.Error(rw, "internal server error", http.StatusInternalServerError)
+		http.Error(rw, "internal server error (code: 2)", http.StatusInternalServerError)
 		return
 	}
 
