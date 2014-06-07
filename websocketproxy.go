@@ -32,12 +32,12 @@ type WebsocketProxy struct {
 	// unmodified request.
 	Backend func(*http.Request) *url.URL
 
-	// Upgrader specifies the parameters for upgrading an HTTP connection to a
-	// WebSocket connection. If nil, DefaultUpgrader is used.
+	// Upgrader specifies the parameters for upgrading a incoming HTTP
+	// connection to a WebSocket connection. If nil, DefaultUpgrader is used.
 	Upgrader *websocket.Upgrader
 
-	//  Dialer contains options for connecting to WebSocket server. If nil,
-	//  DefaultDialer is used.
+	//  Dialer contains options for connecting to the backend WebSocket server.
+	//  If nil, DefaultDialer is used.
 	Dialer *websocket.Dialer
 }
 
