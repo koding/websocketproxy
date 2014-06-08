@@ -90,7 +90,6 @@ func TestProxy(t *testing.T) {
 				return true
 			}
 		}
-
 		return false
 	}
 
