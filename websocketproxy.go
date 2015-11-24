@@ -136,8 +136,8 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// Only pass those headers to the upgrader.
 	upgradeHeader := http.Header{}
-	if hdr := resp.Header.Get("Sec-WebSocket-Protocol"); hdr != "" {
-		upgradeHeader.Set("Sec-WebSocket-Protocol", hdr)
+	if hdr := resp.Header.Get("Sec-Websocket-Protocol"); hdr != "" {
+		upgradeHeader.Set("Sec-Websocket-Protocol", hdr)
 	}
 	if hdr := resp.Header.Get("Set-Cookie"); hdr != "" {
 		upgradeHeader.Set("Set-Cookie", hdr)
