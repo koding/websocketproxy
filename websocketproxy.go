@@ -86,7 +86,9 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// Pass headers from the incoming request to the dialer to forward them to
 	// the final destinations.
 	requestHeader := http.Header{}
-	requestHeader.Add("Origin", req.Header.Get("Origin"))
+	if origin := req.Header.Get("Origin"); origin != "" {
+		requestHeader.Add("Origin", origin)
+	}
 	for _, prot := range req.Header[http.CanonicalHeaderKey("Sec-WebSocket-Protocol")] {
 		requestHeader.Add("Sec-WebSocket-Protocol", prot)
 	}
@@ -136,10 +138,12 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// Only pass those headers to the upgrader.
 	upgradeHeader := http.Header{}
-	upgradeHeader.Set("Sec-WebSocket-Protocol",
-		resp.Header.Get(http.CanonicalHeaderKey("Sec-WebSocket-Protocol")))
-	upgradeHeader.Set("Set-Cookie",
-		resp.Header.Get(http.CanonicalHeaderKey("Set-Cookie")))
+	if hdr := resp.Header.Get("Sec-Websocket-Protocol"); hdr != "" {
+		upgradeHeader.Set("Sec-Websocket-Protocol", hdr)
+	}
+	if hdr := resp.Header.Get("Set-Cookie"); hdr != "" {
+		upgradeHeader.Set("Set-Cookie", hdr)
+	}
 
 	// Now upgrade the existing incoming request to a WebSocket connection.
 	// Also pass the header that we gathered from the Dial handshake.
