@@ -39,6 +39,9 @@ type WebsocketProxy struct {
 	//  Dialer contains options for connecting to the backend WebSocket server.
 	//  If nil, DefaultDialer is used.
 	Dialer *websocket.Dialer
+	
+	// Copier cope bytes from backend connect to frontend
+	Copier func(io.Writer, io.Reader) (int64, error)
 }
 
 // ProxyHandler returns a new http.Handler interface that reverse proxies the
@@ -154,9 +157,14 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	defer connPub.Close()
 
+        copier := w.Copier
+	if w.Copier == nil {
+		copier = io.Copy
+	}
+	
 	errc := make(chan error, 2)
 	cp := func(dst io.Writer, src io.Reader) {
-		_, err := io.Copy(dst, src)
+		_, err := copier(dst, src)
 		errc <- err
 	}
 
