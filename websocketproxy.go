@@ -27,10 +27,10 @@ var (
 // WebsocketProxy is an HTTP Handler that takes an incoming WebSocket
 // connection and proxies it to another server.
 type WebsocketProxy struct {
-	// Backend returns the backend URL which the proxy uses to reverse proxy
+	// BackendURL is the backend URL which the proxy uses to reverse proxy
 	// the incoming WebSocket connection. Request is the initial incoming and
 	// unmodified request.
-	Backend func(*http.Request) *url.URL
+	BackendURL *url.URL
 
 	// Upgrader specifies the parameters for upgrading a incoming HTTP
 	// connection to a WebSocket connection. If nil, DefaultUpgrader is used.
@@ -39,40 +39,23 @@ type WebsocketProxy struct {
 	//  Dialer contains options for connecting to the backend WebSocket server.
 	//  If nil, DefaultDialer is used.
 	Dialer *websocket.Dialer
-}
 
-// ProxyHandler returns a new http.Handler interface that reverse proxies the
-// request to the given target.
-func ProxyHandler(target *url.URL) http.Handler {
-	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		NewProxy(target).ServeHTTP(rw, req)
-	})
+	// Origin keep the origin of the target request.
+	Origin string
 }
 
 // NewProxy returns a new Websocket reverse proxy that rewrites the
 // URL's to the scheme, host and base path provider in target.
 func NewProxy(target *url.URL) *WebsocketProxy {
-	backend := func(r *http.Request) *url.URL {
-		// Shallow copy
-		u := *target
-		u.Fragment = r.URL.Fragment
-		u.Path = r.URL.Path
-		u.RawQuery = r.URL.RawQuery
-		return &u
+	return &WebsocketProxy{
+		Origin:     target.String(),
+		BackendURL: target,
 	}
-	return &WebsocketProxy{Backend: backend}
 }
 
 // ServeHTTP implements the http.Handler that proxies WebSocket connections.
 func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	if w.Backend == nil {
-		log.Println("websocketproxy: backend function is not defined")
-		http.Error(rw, "internal server error (code: 1)", http.StatusInternalServerError)
-		return
-	}
-
-	backendURL := w.Backend(req)
-	if backendURL == nil {
+	if w.BackendURL == nil {
 		log.Println("websocketproxy: backend URL is nil")
 		http.Error(rw, "internal server error (code: 2)", http.StatusInternalServerError)
 		return
@@ -86,9 +69,7 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// Pass headers from the incoming request to the dialer to forward them to
 	// the final destinations.
 	requestHeader := http.Header{}
-	if origin := req.Header.Get("Origin"); origin != "" {
-		requestHeader.Add("Origin", origin)
-	}
+	requestHeader.Add("Origin", w.Origin)
 	for _, prot := range req.Header[http.CanonicalHeaderKey("Sec-WebSocket-Protocol")] {
 		requestHeader.Add("Sec-WebSocket-Protocol", prot)
 	}
@@ -124,7 +105,7 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// opening a new TCP connection time for each request. This should be
 	// optional:
 	// http://tools.ietf.org/html/draft-ietf-hybi-websocket-multiplexing-01
-	connBackend, resp, err := dialer.Dial(backendURL.String(), requestHeader)
+	connBackend, resp, err := dialer.Dial(w.BackendURL.String(), requestHeader)
 	if err != nil {
 		log.Printf("websocketproxy: couldn't dial to remote backend url %s\n", err)
 		return
