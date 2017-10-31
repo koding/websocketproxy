@@ -48,11 +48,7 @@ type WebsocketProxy struct {
 
 // ProxyHandler returns a new http.Handler interface that reverse proxies the
 // request to the given target.
-func ProxyHandler(target *url.URL) http.Handler {
-	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		NewProxy(target).ServeHTTP(rw, req)
-	})
-}
+func ProxyHandler(target *url.URL) http.Handler { return NewProxy(target) }
 
 // NewProxy returns a new Websocket reverse proxy that rewrites the
 // URL's to the scheme, host and base path provider in target.
