@@ -44,6 +44,12 @@ type WebsocketProxy struct {
 	//  Dialer contains options for connecting to the backend WebSocket server.
 	//  If nil, DefaultDialer is used.
 	Dialer *websocket.Dialer
+	
+	// Copier cope bytes from frontend to backend connect
+	CopierIn func(io.Writer, io.Reader) (int64, error)
+
+	// Copier cope bytes from backend connect to frontend
+	CopierOut func(io.Writer, io.Reader) (int64, error)
 }
 
 // ProxyHandler returns a new http.Handler interface that reverse proxies the
@@ -161,14 +167,66 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	defer connPub.Close()
 
+                copierIn := w.CopierIn
+	if w.CopierIn == nil {
+		copierIn = io.Copy
+	}
+
+	copierOut := w.CopierOut
+	if w.CopierOut == nil {
+		copierOut = io.Copy
+	}
+	
 	errc := make(chan error, 2)
-	cp := func(dst io.Writer, src io.Reader) {
-		_, err := io.Copy(dst, src)
-		errc <- err
+
+	cpIn := func(dst, src *websocket.Conn) {
+		for {
+			messageType, r, err := src.NextReader()
+			if err != nil {
+				errc <- err
+				break
+			}
+			w, err := dst.NextWriter(messageType)
+			if err != nil {
+				errc <- err
+				break
+			}
+			if _, err := copierIn(w, r); err != nil {
+				errc <- err
+				break
+			}
+			if err := w.Close(); err != nil {
+				errc <- err
+				break
+			}
+		}
+	}
+
+	cpOut := func(dst, src *websocket.Conn) {
+		for {
+			messageType, r, err := src.NextReader()
+			if err != nil {
+				errc <- err
+				break
+			}
+			w, err := dst.NextWriter(messageType)
+			if err != nil {
+				errc <- err
+				break
+			}
+			if _, err := copierOut(w, r); err != nil {
+				errc <- err
+				break
+			}
+			if err := w.Close(); err != nil {
+				errc <- err
+				break
+			}
+		}
 	}
 
 	// Start our proxy now, everything is ready...
-	go cp(connBackend.UnderlyingConn(), connPub.UnderlyingConn())
-	go cp(connPub.UnderlyingConn(), connBackend.UnderlyingConn())
-	<-errc
+	go cpIn(connBackend, connPub)
+	go cpOut(connPub, connBackend)
+	<- errc
 }
