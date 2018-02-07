@@ -2,7 +2,6 @@
 package websocketproxy
 
 import (
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -162,13 +161,28 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	defer connPub.Close()
 
 	errc := make(chan error, 2)
-	cp := func(dst io.Writer, src io.Reader) {
-		_, err := io.Copy(dst, src)
+
+	replicateWebsocketConn := func(dst, src *websocket.Conn, dstName, srcName string) {
+		var err error
+		for {
+			msgType, msg, err := src.ReadMessage()
+			if err != nil {
+				log.Printf("websocketproxy: error when copying from %s to %s using ReadMessage: %v", srcName, dstName, err)
+				break
+			}
+			err = dst.WriteMessage(msgType, msg)
+			if err != nil {
+				log.Printf("websocketproxy: error when copying from %s to %s using WriteMessage: %v", srcName, dstName, err)
+				break
+			} else {
+				log.Printf("websocketproxy: copying from %s to %s completed without error.", srcName, dstName)
+			}
+		}
 		errc <- err
 	}
 
-	// Start our proxy now, everything is ready...
-	go cp(connBackend.UnderlyingConn(), connPub.UnderlyingConn())
-	go cp(connPub.UnderlyingConn(), connBackend.UnderlyingConn())
+	go replicateWebsocketConn(connPub, connBackend, "client", "backend")
+	go replicateWebsocketConn(connBackend, connPub, "backend", "client")
+
 	<-errc
 }
