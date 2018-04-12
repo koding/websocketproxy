@@ -174,8 +174,6 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			if err != nil {
 				log.Printf("websocketproxy: error when copying from %s to %s using WriteMessage: %v", srcName, dstName, err)
 				break
-			} else {
-				log.Printf("websocketproxy: copying from %s to %s completed without error.", srcName, dstName)
 			}
 		}
 		errc <- err
