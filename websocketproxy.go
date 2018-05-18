@@ -2,6 +2,7 @@
 package websocketproxy
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -160,27 +161,42 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	defer connPub.Close()
 
-	errc := make(chan error, 2)
-
-	replicateWebsocketConn := func(dst, src *websocket.Conn, dstName, srcName string) {
-		var err error
+	errClient := make(chan error, 1)
+	errBackend := make(chan error, 1)
+	replicateWebsocketConn := func(dst, src *websocket.Conn, errc chan error) {
 		for {
 			msgType, msg, err := src.ReadMessage()
 			if err != nil {
-				log.Printf("websocketproxy: error when copying from %s to %s using ReadMessage: %v", srcName, dstName, err)
+				m := websocket.FormatCloseMessage(websocket.CloseNormalClosure, fmt.Sprintf("%v", err))
+				if e, ok := err.(*websocket.CloseError); ok {
+					if e.Code != websocket.CloseNoStatusReceived {
+						m = websocket.FormatCloseMessage(e.Code, e.Text)
+					}
+				}
+				errc <- err
+				dst.WriteMessage(websocket.CloseMessage, m)
 				break
 			}
 			err = dst.WriteMessage(msgType, msg)
 			if err != nil {
-				log.Printf("websocketproxy: error when copying from %s to %s using WriteMessage: %v", srcName, dstName, err)
+				errc <- err
 				break
 			}
 		}
-		errc <- err
 	}
 
-	go replicateWebsocketConn(connPub, connBackend, "client", "backend")
-	go replicateWebsocketConn(connBackend, connPub, "backend", "client")
+	go replicateWebsocketConn(connPub, connBackend, errClient)
+	go replicateWebsocketConn(connBackend, connPub, errBackend)
 
-	<-errc
+	var message string
+	select {
+	case err = <-errClient:
+		message = "websocketproxy: Error when copying from backend to client: %v"
+	case err = <-errBackend:
+		message = "websocketproxy: Error when copying from client to backend: %v"
+
+	}
+	if e, ok := err.(*websocket.CloseError); !ok || e.Code == websocket.CloseAbnormalClosure {
+		log.Printf(message, err)
+	}
 }
