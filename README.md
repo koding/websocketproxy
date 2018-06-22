@@ -32,12 +32,12 @@ var (
 func main() {
 	u, err := url.Parse(*flagBackend)
 	if err != nil {
-		log.Fataln(err)
+		log.Fatalln(err)
 	}
 
-	err := http.ListenAndServe(":80", websocketproxy.NewProxy(u))
+	err = http.ListenAndServe(":80", websocketproxy.NewProxy(u))
 	if err != nil {
-		log.Fataln(err)
+		log.Fatalln(err)
 	}
 }
 ```
