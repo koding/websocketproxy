@@ -30,6 +30,7 @@ func TestProxy(t *testing.T) {
 	u, _ := url.Parse(backendURL)
 	proxy := NewProxy(u)
 	proxy.Upgrader = upgrader
+	proxy.Done = make(chan struct{})
 
 	mux := http.NewServeMux()
 	mux.Handle("/proxy", proxy)
@@ -121,4 +122,6 @@ func TestProxy(t *testing.T) {
 	if msg != string(p) {
 		t.Errorf("expecting: %s, got: %s", msg, string(p))
 	}
+
+	close(proxy.Done)
 }
