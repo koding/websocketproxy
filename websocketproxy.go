@@ -2,6 +2,7 @@
 package websocketproxy
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -47,9 +48,9 @@ type (
 		// If nil, DefaultDialer is used.
 		Dialer *websocket.Dialer
 
-		// Done specifies a channel for which all proxied websocket connections
+		// done specifies a channel for which all proxied websocket connections
 		// can be closed on demand by closing the channel.
-		Done chan struct{}
+		done chan struct{}
 	}
 
 	websocketMsg struct {
@@ -186,6 +187,9 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	errClient := make(chan error, 1)
 	errBackend := make(chan error, 1)
+	if w.done == nil {
+		w.done = make(chan struct{})
+	}
 
 	replicateWebsocketConn := func(dst, src *websocket.Conn, errc chan error) {
 		websocketMsgRcverC := make(chan websocketMsg, 1)
@@ -214,9 +218,7 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 					errc <- err
 					break
 				}
-			case <-w.Done:
-				m := websocket.FormatCloseMessage(websocket.CloseGoingAway, "websocketproxy: closing connection")
-				dst.WriteMessage(websocket.CloseMessage, m)
+			case <-w.done:
 				break
 			}
 		}
@@ -234,8 +236,21 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		if e, ok := err.(*websocket.CloseError); !ok || e.Code == websocket.CloseAbnormalClosure {
 			log.Printf("websocketproxy: Error when copying from client to backend: %v", err)
 		}
-	case <-w.Done:
+	case <-w.done:
+		m := websocket.FormatCloseMessage(websocket.CloseGoingAway, "websocketproxy: closing connection")
+		connPub.WriteMessage(websocket.CloseMessage, m)
+		connBackend.WriteMessage(websocket.CloseMessage, m)
 	}
+}
+
+// Shutdown closes ws connections by closing the done channel they are subscribed to.
+func (w *WebsocketProxy) Shutdown(ctx context.Context) error {
+	// TODO: support using context for control and return error when applicable
+	// Currently implemented such that the method signature matches http.Server.Shutdown()
+	if w.done != nil {
+		close(w.done)
+	}
+	return nil
 }
 
 func copyHeader(dst, src http.Header) {

@@ -1,6 +1,7 @@
 package websocketproxy
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"net/url"
@@ -30,7 +31,6 @@ func TestProxy(t *testing.T) {
 	u, _ := url.Parse(backendURL)
 	proxy := NewProxy(u)
 	proxy.Upgrader = upgrader
-	proxy.Done = make(chan struct{})
 
 	mux := http.NewServeMux()
 	mux.Handle("/proxy", proxy)
@@ -123,5 +123,5 @@ func TestProxy(t *testing.T) {
 		t.Errorf("expecting: %s, got: %s", msg, string(p))
 	}
 
-	close(proxy.Done)
+	proxy.Shutdown(context.Background())
 }
