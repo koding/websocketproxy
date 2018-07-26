@@ -130,8 +130,22 @@ func TestProxy(t *testing.T) {
 	//
 	proxy.Shutdown(context.Background())
 
+	// check close msg received in client
+	messageType, p, err = conn.ReadMessage()
+	e, ok := err.(*websocket.CloseError)
+	if !ok {
+		t.Fatal("client error is not websocket.CloseError")
+	}
+	if e.Code != websocket.CloseGoingAway {
+		t.Error("client error code is not websocket.CloseGoingAway")
+	}
+	if e.Text != websocketProxyClosingMsg {
+		t.Errorf("client error test expecting: %s, got: %s", websocketProxyClosingMsg, e.Text)
+	}
+
+	// check close msg received in backend
 	wsErrBackend := <-websocketMsgRcverCBackend
-	e, ok := wsErrBackend.err.(*websocket.CloseError)
+	e, ok = wsErrBackend.err.(*websocket.CloseError)
 	if !ok {
 		t.Fatal("backend error is not websocket.CloseError")
 	}
