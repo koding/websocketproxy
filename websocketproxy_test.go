@@ -128,7 +128,6 @@ func TestProxy(t *testing.T) {
 
 	// shutdown procedure
 	//
-	backendErrMsg := "websocketproxy: closing connection"
 	proxy.Shutdown(context.Background())
 
 	wsErrBackend := <-websocketMsgRcverCBackend
@@ -139,7 +138,7 @@ func TestProxy(t *testing.T) {
 	if e.Code != websocket.CloseGoingAway {
 		t.Error("backend error code is not websocket.CloseGoingAway")
 	}
-	if e.Text != backendErrMsg {
-		t.Errorf("backend error test expecting: %s, got: %s", backendErrMsg, e.Text)
+	if e.Text != websocketProxyClosingMsg {
+		t.Errorf("backend error test expecting: %s, got: %s", websocketProxyClosingMsg, e.Text)
 	}
 }

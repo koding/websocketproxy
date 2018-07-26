@@ -14,6 +14,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const (
+	websocketProxyClosingMsg = "websocketproxy: closing connection"
+)
+
 var (
 	// DefaultUpgrader specifies the parameters for upgrading an HTTP
 	// connection to a WebSocket connection.
@@ -237,7 +241,7 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			log.Printf("websocketproxy: Error when copying from client to backend: %v", err)
 		}
 	case <-w.done:
-		m := websocket.FormatCloseMessage(websocket.CloseGoingAway, "websocketproxy: closing connection")
+		m := websocket.FormatCloseMessage(websocket.CloseGoingAway, websocketProxyClosingMsg)
 		connPub.WriteMessage(websocket.CloseMessage, m)
 		connBackend.WriteMessage(websocket.CloseMessage, m)
 	}
