@@ -18,6 +18,7 @@ var (
 
 func TestProxy(t *testing.T) {
 	// websocket proxy
+	u, _ := url.Parse(backendURL)
 	supportedSubProtocols := []string{"test-protocol"}
 	upgrader := &websocket.Upgrader{
 		ReadBufferSize:  4096,
@@ -28,13 +29,12 @@ func TestProxy(t *testing.T) {
 		Subprotocols: supportedSubProtocols,
 	}
 
-	u, _ := url.Parse(backendURL)
 	proxy := NewProxy(u)
 	proxy.Upgrader = upgrader
 
-	mux := http.NewServeMux()
-	mux.Handle("/proxy", proxy)
 	go func() {
+		mux := http.NewServeMux()
+		mux.Handle("/proxy", proxy)
 		if err := http.ListenAndServe(":7777", mux); err != nil {
 			t.Fatal("ListenAndServe: ", err)
 		}
@@ -43,6 +43,7 @@ func TestProxy(t *testing.T) {
 	time.Sleep(time.Millisecond * 100)
 
 	// backend echo server
+	websocketMsgRcverCBackend := make(chan websocketMsg, 1)
 	go func() {
 		mux2 := http.NewServeMux()
 		mux2.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -52,13 +53,16 @@ func TestProxy(t *testing.T) {
 				return
 			}
 
-			messageType, p, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
+			for {
+				messageType, p, err := conn.ReadMessage()
+				if err != nil {
+					websocketMsgRcverCBackend <- websocketMsg{messageType, p, err}
+					return
+				}
 
-			if err = conn.WriteMessage(messageType, p); err != nil {
-				return
+				if err = conn.WriteMessage(messageType, p); err != nil {
+					return
+				}
 			}
 		})
 
@@ -70,8 +74,8 @@ func TestProxy(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 100)
 
-	// let's us define two subprotocols, only one is supported by the server
-	clientSubProtocols := []string{"test-protocol", "test-notsupported"}
+	// define subprotocols for client, appending one not supported by the server
+	clientSubProtocols := append(supportedSubProtocols, []string{"test-notsupported"}...)
 	h := http.Header{}
 	for _, subprot := range clientSubProtocols {
 		h.Add("Sec-WebSocket-Protocol", subprot)
@@ -102,8 +106,7 @@ func TestProxy(t *testing.T) {
 		t.Error("test-notsupported should be not recevied from the server.")
 	}
 
-	// now write a message and send it to the backend server (which goes trough
-	// proxy..)
+	// send msg to the backend server which goes through proxy
 	msg := "hello kite"
 	err = conn.WriteMessage(websocket.TextMessage, []byte(msg))
 	if err != nil {
@@ -123,5 +126,20 @@ func TestProxy(t *testing.T) {
 		t.Errorf("expecting: %s, got: %s", msg, string(p))
 	}
 
+	// shutdown procedure
+	//
+	backendErrMsg := "websocketproxy: closing connection"
 	proxy.Shutdown(context.Background())
+
+	wsErrBackend := <-websocketMsgRcverCBackend
+	e, ok := wsErrBackend.err.(*websocket.CloseError)
+	if !ok {
+		t.Fatal("backend error is not websocket.CloseError")
+	}
+	if e.Code != websocket.CloseGoingAway {
+		t.Error("backend error code is not websocket.CloseGoingAway")
+	}
+	if e.Text != backendErrMsg {
+		t.Errorf("backend error test expecting: %s, got: %s", backendErrMsg, e.Text)
+	}
 }
