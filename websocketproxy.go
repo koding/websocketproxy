@@ -97,8 +97,8 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	for _, cookie := range req.Header[http.CanonicalHeaderKey("Cookie")] {
 		requestHeader.Add("Cookie", cookie)
 	}
-	if host := req.Host; host != "" {
-		requestHeader.Set("Host", host)
+	if req.Host != "" {
+		requestHeader.Set("Host", req.Host)
 	}
 
 	// Pass X-Forwarded-For headers too, code below is a part of
