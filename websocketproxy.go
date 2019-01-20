@@ -69,6 +69,8 @@ type WebsocketProxy struct {
 	// which will be forwarded to another server.
 	Director func(incoming *http.Request, out http.Header)
 
+	Rewriter func(msg []byte) []byte
+
 	// Backend returns the backend URL which the proxy uses to reverse proxy
 	// the incoming WebSocket connection. Request is the initial incoming and
 	// unmodified request.
@@ -227,7 +229,6 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 				dst.WriteMessage(websocket.CloseMessage, m)
 				break
 			}
-
 			err = dst.WriteMessage(msgType, msg)
 			if err != nil {
 				errc <- err
