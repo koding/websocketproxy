@@ -18,15 +18,16 @@ var (
 func TestProxy(t *testing.T) {
 	// websocket proxy
 	supportedSubProtocols := []string{"test-protocol"}
-	upgrader := &websocket.Upgrader{
-		ReadBufferSize:  4096,
-		WriteBufferSize: 4096,
-		CheckOrigin: func(r *http.Request) bool {
-			return true
+	upgrader := &WSProxyUpgrader{
+		websocket.Upgrader{
+			ReadBufferSize:  4096,
+			WriteBufferSize: 4096,
+			CheckOrigin: func(r *http.Request) bool {
+				return true
+			},
+			Subprotocols: supportedSubProtocols,
 		},
-		Subprotocols: supportedSubProtocols,
 	}
-
 	u, _ := url.Parse(backendURL)
 	proxy := NewProxy(u)
 	proxy.Upgrader = upgrader
@@ -46,7 +47,7 @@ func TestProxy(t *testing.T) {
 		mux2 := http.NewServeMux()
 		mux2.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			// Don't upgrade if original host header isn't preserved
-			if r.Host !=  "127.0.0.1:7777" {
+			if r.Host != "127.0.0.1:7777" {
 				log.Printf("Host header set incorrectly.  Expecting 127.0.0.1:7777 got %s", r.Host)
 				return
 			}
