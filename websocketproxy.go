@@ -23,7 +23,12 @@ var (
 
 	// DefaultDialer is a dialer with all fields set to the default zero values.
 	DefaultDialer = websocket.DefaultDialer
+
+	// DefaultReplicator is a simple message passthrough
+	DefaultReplicator = passthroughReplicator
 )
+
+type MessageReplicatorFunc func(dst, src *websocket.Conn, errc chan error)
 
 // WebsocketProxy is an HTTP Handler that takes an incoming WebSocket
 // connection and proxies it to another server.
@@ -32,6 +37,14 @@ type WebsocketProxy struct {
 	// headers from the incoming WebSocket connection into the output headers
 	// which will be forwarded to another server.
 	Director func(incoming *http.Request, out http.Header)
+
+	// IncomeReplicator is a function that forward messages incoming from origin
+	// into the backend. If nil, passthroughsReplicator is used.
+	IncomeReplicator MessageReplicatorFunc
+
+	// BackendReplicator is a function that forwards messages from backend into
+	// origin. If nil, passthroughsReplicator is used.
+	BackendReplicator MessageReplicatorFunc
 
 	// Backend returns the backend URL which the proxy uses to reverse proxy
 	// the incoming WebSocket connection. Request is the initial incoming and
@@ -177,30 +190,18 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	errClient := make(chan error, 1)
 	errBackend := make(chan error, 1)
-	replicateWebsocketConn := func(dst, src *websocket.Conn, errc chan error) {
-		for {
-			msgType, msg, err := src.ReadMessage()
-			if err != nil {
-				m := websocket.FormatCloseMessage(websocket.CloseNormalClosure, fmt.Sprintf("%v", err))
-				if e, ok := err.(*websocket.CloseError); ok {
-					if e.Code != websocket.CloseNoStatusReceived {
-						m = websocket.FormatCloseMessage(e.Code, e.Text)
-					}
-				}
-				errc <- err
-				dst.WriteMessage(websocket.CloseMessage, m)
-				break
-			}
-			err = dst.WriteMessage(msgType, msg)
-			if err != nil {
-				errc <- err
-				break
-			}
-		}
-	}
 
-	go replicateWebsocketConn(connPub, connBackend, errClient)
-	go replicateWebsocketConn(connBackend, connPub, errBackend)
+	incomingReplicator := w.IncomeReplicator
+	if w.IncomeReplicator == nil {
+		incomingReplicator = DefaultReplicator
+	}
+	go incomingReplicator(connPub, connBackend, errClient)
+
+	backendReplicator := w.BackendReplicator
+	if w.BackendReplicator == nil {
+		backendReplicator = DefaultReplicator
+	}
+	go backendReplicator(connBackend, connPub, errBackend)
 
 	var message string
 	select {
@@ -230,4 +231,26 @@ func copyResponse(rw http.ResponseWriter, resp *http.Response) error {
 
 	_, err := io.Copy(rw, resp.Body)
 	return err
+}
+
+func passthroughReplicator(dst, src *websocket.Conn, errc chan error) {
+	for {
+		msgType, msg, err := src.ReadMessage()
+		if err != nil {
+			m := websocket.FormatCloseMessage(websocket.CloseNormalClosure, fmt.Sprintf("%v", err))
+			if e, ok := err.(*websocket.CloseError); ok {
+				if e.Code != websocket.CloseNoStatusReceived {
+					m = websocket.FormatCloseMessage(e.Code, e.Text)
+				}
+			}
+			errc <- err
+			dst.WriteMessage(websocket.CloseMessage, m)
+			break
+		}
+		err = dst.WriteMessage(msgType, msg)
+		if err != nil {
+			errc <- err
+			break
+		}
+	}
 }
