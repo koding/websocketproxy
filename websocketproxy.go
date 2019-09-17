@@ -88,6 +88,9 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// Pass headers from the incoming request to the dialer to forward them to
 	// the final destinations.
 	requestHeader := http.Header{}
+	if origin := req.Header.Get("User-Agent"); origin != "" {
+		requestHeader.Add("User-Agent", origin)
+	}
 	if origin := req.Header.Get("Origin"); origin != "" {
 		requestHeader.Add("Origin", origin)
 	}
