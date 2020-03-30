@@ -45,6 +45,10 @@ type WebsocketProxy struct {
 	//  Dialer contains options for connecting to the backend WebSocket server.
 	//  If nil, DefaultDialer is used.
 	Dialer *websocket.Dialer
+
+	// Stop channels to close the websocket on demand
+	stopClientChan  chan struct{}
+	stopBackendChan chan struct{}
 }
 
 // ProxyHandler returns a new http.Handler interface that reverse proxies the
@@ -63,6 +67,12 @@ func NewProxy(target *url.URL) *WebsocketProxy {
 		return &u
 	}
 	return &WebsocketProxy{Backend: backend}
+}
+
+// Stop websocket proxy on demand
+func (w *WebsocketProxy) CloseProxy() {
+	close(w.stopBackendChan)
+	close(w.stopClientChan)
 }
 
 // ServeHTTP implements the http.Handler that proxies WebSocket connections.
@@ -177,30 +187,42 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	errClient := make(chan error, 1)
 	errBackend := make(chan error, 1)
-	replicateWebsocketConn := func(dst, src *websocket.Conn, errc chan error) {
+	replicateWebsocketConn := func(dst, src *websocket.Conn, errc chan error, stopChan chan struct{}) {
 		for {
-			msgType, msg, err := src.ReadMessage()
-			if err != nil {
-				m := websocket.FormatCloseMessage(websocket.CloseNormalClosure, fmt.Sprintf("%v", err))
-				if e, ok := err.(*websocket.CloseError); ok {
-					if e.Code != websocket.CloseNoStatusReceived {
-						m = websocket.FormatCloseMessage(e.Code, e.Text)
+			// do until stopChan gets any message
+			select {
+			default:
+				msgType, msg, err := src.ReadMessage()
+				if err != nil {
+					m := websocket.FormatCloseMessage(websocket.CloseNormalClosure, fmt.Sprintf("%v", err))
+					if e, ok := err.(*websocket.CloseError); ok {
+						if e.Code != websocket.CloseNoStatusReceived {
+							m = websocket.FormatCloseMessage(e.Code, e.Text)
+						}
 					}
+					errc <- err
+					dst.WriteMessage(websocket.CloseMessage, m)
+					break
 				}
-				errc <- err
-				dst.WriteMessage(websocket.CloseMessage, m)
-				break
+				err = dst.WriteMessage(msgType, msg)
+				if err != nil {
+					errc <- err
+					break
+				}
+			case <-stopChan:
+				dst.WriteMessage(websocket.CloseMessage, []byte("Closed by proxy"))
+				return
 			}
-			err = dst.WriteMessage(msgType, msg)
-			if err != nil {
-				errc <- err
-				break
-			}
+
 		}
 	}
 
-	go replicateWebsocketConn(connPub, connBackend, errClient)
-	go replicateWebsocketConn(connBackend, connPub, errBackend)
+	// initiate the stop channels
+	w.stopClientChan = make(chan struct{})
+	w.stopBackendChan = make(chan struct{})
+
+	go replicateWebsocketConn(connPub, connBackend, errClient, w.stopClientChan)
+	go replicateWebsocketConn(connBackend, connPub, errBackend, w.stopBackendChan)
 
 	var message string
 	select {
