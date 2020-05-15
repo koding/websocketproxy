@@ -167,14 +167,14 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		upgrader = DefaultUpgrader
 	}
 
-	// Only pass those headers to the upgrader.
+	// passing all headers except those which can become duplicate
 	upgradeHeader := http.Header{}
-	if hdr := resp.Header.Get("Sec-Websocket-Protocol"); hdr != "" {
-		upgradeHeader.Set("Sec-Websocket-Protocol", hdr)
-	}
-	if hdr := resp.Header.Get("Set-Cookie"); hdr != "" {
-		upgradeHeader.Set("Set-Cookie", hdr)
-	}
+	copyHeader(upgradeHeader, resp.Header)
+
+	// These are extra header which the upgrader actually sets itself so need to remove these to avoid duplicate headers
+	upgradeHeader.Del("Connection")
+	upgradeHeader.Del("Upgrade")
+	upgradeHeader.Del("Sec-WebSocket-Accept")
 
 	// Now upgrade the existing incoming request to a WebSocket connection.
 	// Also pass the header that we gathered from the Dial handshake.
