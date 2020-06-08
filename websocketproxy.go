@@ -45,6 +45,11 @@ type WebsocketProxy struct {
 	//  Dialer contains options for connecting to the backend WebSocket server.
 	//  If nil, DefaultDialer is used.
 	Dialer *websocket.Dialer
+
+	// ModifyResponse allows modifying the websocket messages bidirectionally
+	// User assigned function will be called with the request, response and original message,
+	// and must return the modified message. If nil, the data is transmitted unaltered.
+	ModifyResponse func(*http.Request, *http.Response, []byte) []byte
 }
 
 // ProxyHandler returns a new http.Handler interface that reverse proxies the
@@ -191,6 +196,11 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 				dst.WriteMessage(websocket.CloseMessage, m)
 				break
 			}
+
+			if w.ModifyResponse != nil {
+				msg = w.ModifyResponse(req, resp, msg)
+			}
+
 			err = dst.WriteMessage(msgType, msg)
 			if err != nil {
 				errc <- err
