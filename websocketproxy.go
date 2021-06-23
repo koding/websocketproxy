@@ -45,6 +45,8 @@ type WebsocketProxy struct {
 	//  Dialer contains options for connecting to the backend WebSocket server.
 	//  If nil, DefaultDialer is used.
 	Dialer *websocket.Dialer
+
+	ClientConn *websocket.Conn
 }
 
 // ProxyHandler returns a new http.Handler interface that reverse proxies the
@@ -201,6 +203,8 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	go replicateWebsocketConn(connPub, connBackend, errClient)
 	go replicateWebsocketConn(connBackend, connPub, errBackend)
+
+	w.ClientConn = connPub
 
 	var message string
 	select {
