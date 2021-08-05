@@ -34,8 +34,9 @@ func TestProxy(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/proxy", proxy)
+	server := &http.Server{Addr: ":7777", Handler: mux}
 	go func() {
-		if err := http.ListenAndServe(":7777", mux); err != nil {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			t.Fatal("ListenAndServe: ", err)
 		}
 	}()
@@ -43,38 +44,40 @@ func TestProxy(t *testing.T) {
 	time.Sleep(time.Millisecond * 100)
 
 	// backend echo server
-	go func() {
-		mux2 := http.NewServeMux()
-		mux2.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			// Don't upgrade if original host header isn't preserved
-			if r.Host != "127.0.0.1:7777" {
-				log.Printf("Host header set incorrectly.  Expecting 127.0.0.1:7777 got %s", r.Host)
-				return
-			}
+	mux2 := http.NewServeMux()
+	mux2.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Don't upgrade if original host header isn't preserved
+		if r.Host != "127.0.0.1:7777" {
+			log.Printf("Host header set incorrectly.  Expecting 127.0.0.1:7777 got %s", r.Host)
+			return
+		}
 
-			conn, err := upgrader.Upgrade(w, r, nil)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-
-			messageType, p, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-
-			if err = conn.WriteMessage(messageType, p); err != nil {
-				return
-			}
-		})
-
-		err := http.ListenAndServe(":8888", mux2)
+		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		messageType, p, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+
+		if err = conn.WriteMessage(messageType, p); err != nil {
+			return
+		}
+	})
+	backendServer := &http.Server{Addr: ":8888", Handler: mux2}
+	go func() {
+		if err := backendServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			t.Fatal("ListenAndServe: ", err)
 		}
 	}()
 
 	time.Sleep(time.Millisecond * 100)
+
+	defer server.Close()
+	defer backendServer.Close()
 
 	// let's us define two subprotocols, only one is supported by the server
 	clientSubProtocols := []string{"test-protocol", "test-notsupported"}
@@ -148,8 +151,9 @@ func TestProxy_ClientPingPong(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.Handle("/proxy", proxy)
+	server := &http.Server{Addr: ":7777", Handler: mux}
 	go func() {
-		if err := http.ListenAndServe(":7777", mux); err != nil {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			t.Fatal("ListenAndServe: ", err)
 		}
 	}()
@@ -158,37 +162,40 @@ func TestProxy_ClientPingPong(t *testing.T) {
 
 	// backend echo server
 	var backendReceivedMessageFromProxy bool
-	go func() {
-		mux2 := http.NewServeMux()
-		mux2.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			// Don't upgrade if original host header isn't preserved
-			if r.Host != "127.0.0.1:7777" {
-				log.Printf("Host header set incorrectly.  Expecting 127.0.0.1:7777 got %s", r.Host)
-				return
-			}
+	mux2 := http.NewServeMux()
+	mux2.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Don't upgrade if original host header isn't preserved
+		if r.Host != "127.0.0.1:7777" {
+			log.Printf("Host header set incorrectly.  Expecting 127.0.0.1:7777 got %s", r.Host)
+			return
+		}
 
-			conn, err := upgrader.Upgrade(w, r, nil)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-
-			_, _, err = conn.ReadMessage()
-			if err != nil {
-				panic(err)
-			}
-
-			backendReceivedMessageFromProxy = true
-
-		})
-
-		err := http.ListenAndServe(":8888", mux2)
+		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		_, _, err = conn.ReadMessage()
+		if err != nil {
+			panic(err)
+		}
+
+		backendReceivedMessageFromProxy = true
+
+	})
+
+	backendServer := &http.Server{Addr: ":8888", Handler: mux2}
+	go func() {
+		if err := backendServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			t.Fatal("ListenAndServe: ", err)
 		}
 	}()
 
 	time.Sleep(time.Millisecond * 100)
+
+	defer server.Close()
+	defer backendServer.Close()
 
 	// let's us define two subprotocols, only one is supported by the server
 	clientSubProtocols := []string{"test-protocol", "test-notsupported"}
