@@ -57,9 +57,6 @@ type WebsocketProxy struct {
 type ProxyConfig struct {
 	// Indicates whether a ping message should be handled from the client with a pong response
 	SupportClientPingPong bool
-
-	// Indicates whether a ping message should be handled from the backend with a pong response
-	SupportBackendPingPong bool
 }
 
 // ProxyHandler returns a new http.Handler interface that reverse proxies the
@@ -225,7 +222,7 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	go replicateWebsocketConn(connPub, connBackend, errClient, w.config.SupportBackendPingPong)
+	go replicateWebsocketConn(connPub, connBackend, errClient, false)
 	go replicateWebsocketConn(connBackend, connPub, errBackend, w.config.SupportClientPingPong)
 
 	var message string
