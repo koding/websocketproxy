@@ -2,6 +2,7 @@
 package websocketproxy
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -23,6 +24,9 @@ var (
 
 	// DefaultDialer is a dialer with all fields set to the default zero values.
 	DefaultDialer = websocket.DefaultDialer
+
+	pingMessage = []uint8{112, 105, 110, 103}
+	pongMessage = []uint8{112, 111, 110, 103}
 )
 
 // WebsocketProxy is an HTTP Handler that takes an incoming WebSocket
@@ -46,16 +50,25 @@ type WebsocketProxy struct {
 	//  If nil, DefaultDialer is used.
 	Dialer *websocket.Dialer
 
-	ClientConn *websocket.Conn
+	config *ProxyConfig
+}
+
+// ProxyConfig defines the configuration that is supported by the websocket proxy
+type ProxyConfig struct {
+	// Indicates whether a ping message should be handled from the client with a pong response
+	SupportClientPingPong bool
+
+	// Indicates whether a ping message should be handled from the backend with a pong response
+	SupportBackendPingPong bool
 }
 
 // ProxyHandler returns a new http.Handler interface that reverse proxies the
 // request to the given target.
-func ProxyHandler(target *url.URL) http.Handler { return NewProxy(target) }
+func ProxyHandler(target *url.URL, config *ProxyConfig) http.Handler { return NewProxy(target, config) }
 
 // NewProxy returns a new Websocket reverse proxy that rewrites the
 // URL's to the scheme, host and base path provider in target.
-func NewProxy(target *url.URL) *WebsocketProxy {
+func NewProxy(target *url.URL, config *ProxyConfig) *WebsocketProxy {
 	backend := func(r *http.Request) *url.URL {
 		// Shallow copy
 		u := *target
@@ -64,7 +77,14 @@ func NewProxy(target *url.URL) *WebsocketProxy {
 		u.RawQuery = r.URL.RawQuery
 		return &u
 	}
-	return &WebsocketProxy{Backend: backend}
+
+	wsProxy := &WebsocketProxy{Backend: backend, config: config}
+
+	if config == nil {
+		wsProxy.config = &ProxyConfig{}
+	}
+
+	return wsProxy
 }
 
 // ServeHTTP implements the http.Handler that proxies WebSocket connections.
@@ -179,7 +199,7 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	errClient := make(chan error, 1)
 	errBackend := make(chan error, 1)
-	replicateWebsocketConn := func(dst, src *websocket.Conn, errc chan error) {
+	replicateWebsocketConn := func(dst, src *websocket.Conn, errc chan error, supportPingPong bool) {
 		for {
 			msgType, msg, err := src.ReadMessage()
 			if err != nil {
@@ -193,18 +213,20 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 				dst.WriteMessage(websocket.CloseMessage, m)
 				break
 			}
-			err = dst.WriteMessage(msgType, msg)
-			if err != nil {
-				errc <- err
-				break
+			if supportPingPong && bytes.Equal(msg, pingMessage) {
+				src.WriteMessage(msgType, pongMessage)
+			} else {
+				err = dst.WriteMessage(msgType, msg)
+				if err != nil {
+					errc <- err
+					break
+				}
 			}
 		}
 	}
 
-	go replicateWebsocketConn(connPub, connBackend, errClient)
-	go replicateWebsocketConn(connBackend, connPub, errBackend)
-
-	w.ClientConn = connPub
+	go replicateWebsocketConn(connPub, connBackend, errClient, w.config.SupportBackendPingPong)
+	go replicateWebsocketConn(connBackend, connPub, errBackend, w.config.SupportClientPingPong)
 
 	var message string
 	select {

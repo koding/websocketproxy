@@ -1,6 +1,7 @@
 package websocketproxy
 
 import (
+	"bytes"
 	"log"
 	"net/http"
 	"net/url"
@@ -28,7 +29,7 @@ func TestProxy(t *testing.T) {
 	}
 
 	u, _ := url.Parse(backendURL)
-	proxy := NewProxy(u)
+	proxy := NewProxy(u, nil)
 	proxy.Upgrader = upgrader
 
 	mux := http.NewServeMux()
@@ -46,7 +47,7 @@ func TestProxy(t *testing.T) {
 		mux2 := http.NewServeMux()
 		mux2.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			// Don't upgrade if original host header isn't preserved
-			if r.Host !=  "127.0.0.1:7777" {
+			if r.Host != "127.0.0.1:7777" {
 				log.Printf("Host header set incorrectly.  Expecting 127.0.0.1:7777 got %s", r.Host)
 				return
 			}
@@ -126,5 +127,103 @@ func TestProxy(t *testing.T) {
 
 	if msg != string(p) {
 		t.Errorf("expecting: %s, got: %s", msg, string(p))
+	}
+}
+
+func TestProxy_ClientPingPong(t *testing.T) {
+	// websocket proxy
+	supportedSubProtocols := []string{"test-protocol"}
+	upgrader := &websocket.Upgrader{
+		ReadBufferSize:  4096,
+		WriteBufferSize: 4096,
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+		Subprotocols: supportedSubProtocols,
+	}
+
+	u, _ := url.Parse(backendURL)
+	proxy := NewProxy(u, &ProxyConfig{SupportClientPingPong: true})
+	proxy.Upgrader = upgrader
+
+	mux := http.NewServeMux()
+	mux.Handle("/proxy", proxy)
+	go func() {
+		if err := http.ListenAndServe(":7777", mux); err != nil {
+			t.Fatal("ListenAndServe: ", err)
+		}
+	}()
+
+	time.Sleep(time.Millisecond * 100)
+
+	// backend echo server
+	var backendReceivedMessageFromProxy bool
+	go func() {
+		mux2 := http.NewServeMux()
+		mux2.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// Don't upgrade if original host header isn't preserved
+			if r.Host != "127.0.0.1:7777" {
+				log.Printf("Host header set incorrectly.  Expecting 127.0.0.1:7777 got %s", r.Host)
+				return
+			}
+
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+
+			_, _, err = conn.ReadMessage()
+			if err != nil {
+				panic(err)
+			}
+
+			backendReceivedMessageFromProxy = true
+
+		})
+
+		err := http.ListenAndServe(":8888", mux2)
+		if err != nil {
+			t.Fatal("ListenAndServe: ", err)
+		}
+	}()
+
+	time.Sleep(time.Millisecond * 100)
+
+	// let's us define two subprotocols, only one is supported by the server
+	clientSubProtocols := []string{"test-protocol", "test-notsupported"}
+	h := http.Header{}
+	for _, subprot := range clientSubProtocols {
+		h.Add("Sec-WebSocket-Protocol", subprot)
+	}
+
+	// frontend server, dial now our proxy, which will reverse proxy our
+	// message to the backend websocket server.
+	conn, _, err := websocket.DefaultDialer.Dial(serverURL+"/proxy", h)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// send our ping to the proxy and confirm we get a pong back
+	err = conn.WriteMessage(websocket.BinaryMessage, pingMessage)
+	if err != nil {
+		t.Error(err)
+	}
+
+	messageType, p, err := conn.ReadMessage()
+	if err != nil {
+		t.Error(err)
+	}
+
+	if messageType != websocket.BinaryMessage {
+		t.Error("returned message type is not binary")
+	}
+
+	if !bytes.Equal(p, pongMessage) {
+		t.Error("returned message is not pong")
+	}
+
+	if backendReceivedMessageFromProxy == true {
+		t.Error("ping message was proxied to backend and should not have been")
 	}
 }
