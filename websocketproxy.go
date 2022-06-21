@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -198,6 +199,22 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 			}
 		}
 	}
+
+	connPub.SetPingHandler(func(appData string) error {
+		err := connBackend.WriteControl(websocket.PingMessage, []byte(appData), time.Now().Add(time.Second))
+		if err != nil {
+			return err
+		}
+
+		// default behavior from https://github.com/gorilla/websocket/blob/v1.5.0/conn.go#L1161-L1167
+		err = connPub.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(time.Second))
+		if err == websocket.ErrCloseSent {
+			return nil
+		} else if e, ok := err.(net.Error); ok && e.Temporary() {
+			return nil
+		}
+		return err
+	})
 
 	go replicateWebsocketConn(connPub, connBackend, errClient)
 	go replicateWebsocketConn(connBackend, connPub, errBackend)
