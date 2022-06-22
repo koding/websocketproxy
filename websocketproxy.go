@@ -99,6 +99,14 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	requestHeader.Del("Sec-Websocket-Version")
 	requestHeader.Del("Upgrade")
 
+	// Remove all hop-by-hop headers
+	requestHeader.Del("Keep-Alive")
+	requestHeader.Del("Transfer-Encoding")
+	requestHeader.Del("TE")
+	requestHeader.Del("Trailer")
+	requestHeader.Del("Proxy-Authorization")
+	requestHeader.Del("Proxy-Authenticate")
+
 	if origin := req.Header.Get("Origin"); origin != "" {
 		requestHeader.Add("Origin", origin)
 	}
