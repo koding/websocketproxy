@@ -89,8 +89,10 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// the final destinations.
 	requestHeader := req.Header.Clone()
 
-	// gorilla/websocket adds these headers back, but it never .Set() them, so leaving these
-	// headers leads to duplicates
+	// gorilla/websocket automatically adds these headers back when Dial() is called, but it never
+	// uses Set(), rather it sets these headers using normal assignment might can so lead to
+	// duplicate headers. Hence, we can remove them. (If this problem gets fixed in gorilla/websocket,
+	// these 4 lines become redundant, but will not break the current implementation)
 	requestHeader.Del("Connection")
 	requestHeader.Del("Sec-Websocket-Extensions")
 	requestHeader.Del("Sec-Websocket-Key")
