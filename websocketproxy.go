@@ -87,7 +87,26 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// Pass headers from the incoming request to the dialer to forward them to
 	// the final destinations.
-	requestHeader := http.Header{}
+	requestHeader := req.Header.Clone()
+
+	// gorilla/websocket automatically adds these headers back when Dial() is called, but it never
+	// uses Set(), rather it sets these headers using normal assignment might can so lead to
+	// duplicate headers. Hence, we can remove them. (If this problem gets fixed in gorilla/websocket,
+	// these 5 lines become redundant, but will not break the current implementation)
+	requestHeader.Del("Connection")
+	requestHeader.Del("Sec-Websocket-Extensions")
+	requestHeader.Del("Sec-Websocket-Key")
+	requestHeader.Del("Sec-Websocket-Version")
+	requestHeader.Del("Upgrade")
+
+	// Remove all hop-by-hop headers
+	requestHeader.Del("Keep-Alive")
+	requestHeader.Del("Transfer-Encoding")
+	requestHeader.Del("TE")
+	requestHeader.Del("Trailer")
+	requestHeader.Del("Proxy-Authorization")
+	requestHeader.Del("Proxy-Authenticate")
+
 	if origin := req.Header.Get("Origin"); origin != "" {
 		requestHeader.Add("Origin", origin)
 	}
