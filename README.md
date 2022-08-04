@@ -30,6 +30,7 @@ var (
 )
 
 func main() {
+	flag.Parse()
 	u, err := url.Parse(*flagBackend)
 	if err != nil {
 		log.Fatalln(err)
