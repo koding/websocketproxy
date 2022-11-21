@@ -4,82 +4,57 @@ package websocketproxy
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
+	klog "k8s.io/klog/v2"
 )
-
-var (
-	// DefaultUpgrader specifies the parameters for upgrading an HTTP
-	// connection to a WebSocket connection.
-	DefaultUpgrader = &websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-	}
-
-	// DefaultDialer is a dialer with all fields set to the default zero values.
-	DefaultDialer = websocket.DefaultDialer
-)
-
-// WebsocketProxy is an HTTP Handler that takes an incoming WebSocket
-// connection and proxies it to another server.
-type WebsocketProxy struct {
-	// Director, if non-nil, is a function that may copy additional request
-	// headers from the incoming WebSocket connection into the output headers
-	// which will be forwarded to another server.
-	Director func(incoming *http.Request, out http.Header)
-
-	// Backend returns the backend URL which the proxy uses to reverse proxy
-	// the incoming WebSocket connection. Request is the initial incoming and
-	// unmodified request.
-	Backend func(*http.Request) *url.URL
-
-	// Upgrader specifies the parameters for upgrading a incoming HTTP
-	// connection to a WebSocket connection. If nil, DefaultUpgrader is used.
-	Upgrader *websocket.Upgrader
-
-	//  Dialer contains options for connecting to the backend WebSocket server.
-	//  If nil, DefaultDialer is used.
-	Dialer *websocket.Dialer
-}
 
 // ProxyHandler returns a new http.Handler interface that reverse proxies the
 // request to the given target.
-func ProxyHandler(target *url.URL) http.Handler { return NewProxy(target) }
+func ProxyHandler(options ProxyOptions) http.Handler { return NewProxy(options) }
 
 // NewProxy returns a new Websocket reverse proxy that rewrites the
 // URL's to the scheme, host and base path provider in target.
-func NewProxy(target *url.URL) *WebsocketProxy {
+func NewProxy(options ProxyOptions) *WebsocketProxy {
 	backend := func(r *http.Request) *url.URL {
 		// Shallow copy
-		u := *target
+		u := options.Url
 		u.Fragment = r.URL.Fragment
 		u.Path = r.URL.Path
 		u.RawQuery = r.URL.RawQuery
-		return &u
+		return u
 	}
-	return &WebsocketProxy{Backend: backend}
+	return &WebsocketProxy{
+		Director: options.Director,
+		Viewer:   options.Viewer,
+		Upgrader: options.Upgrader,
+		Dialer:   options.Dialer,
+		backend:  backend,
+		options:  options,
+	}
 }
 
 // ServeHTTP implements the http.Handler that proxies WebSocket connections.
 func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	if w.Backend == nil {
-		log.Println("websocketproxy: backend function is not defined")
+	if w.backend == nil {
+		klog.Errorf("websocketproxy: backend function is not defined\n")
 		http.Error(rw, "internal server error (code: 1)", http.StatusInternalServerError)
 		return
 	}
 
-	backendURL := w.Backend(req)
+	backendURL := w.backend(req)
 	if backendURL == nil {
-		log.Println("websocketproxy: backend URL is nil")
+		klog.Errorf("websocketproxy: backend URL is nil\n")
 		http.Error(rw, "internal server error (code: 2)", http.StatusInternalServerError)
 		return
 	}
 
+	// using a custom dialer?
 	dialer := w.Dialer
 	if w.Dialer == nil {
 		dialer = DefaultDialer
@@ -87,24 +62,56 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// Pass headers from the incoming request to the dialer to forward them to
 	// the final destinations.
-	requestHeader := http.Header{}
-	if origin := req.Header.Get("Origin"); origin != "" {
-		requestHeader.Add("Origin", origin)
-	}
-	for _, prot := range req.Header[http.CanonicalHeaderKey("Sec-WebSocket-Protocol")] {
-		requestHeader.Add("Sec-WebSocket-Protocol", prot)
-	}
-	for _, cookie := range req.Header[http.CanonicalHeaderKey("Cookie")] {
-		requestHeader.Add("Cookie", cookie)
-	}
-	if req.Host != "" {
-		requestHeader.Set("Host", req.Host)
+	var requestHeader http.Header
+
+	// enable more of a passthrough proxy
+	if w.options.NaturalTunnel {
+		requestHeader = req.Header.Clone()
+
+		/*
+			Please see: https://github.com/koding/websocketproxy/pull/44/
+		*/
+		// gorilla/websocket automatically adds these headers back when Dial() is called, but it never
+		// uses Set(), rather it sets these headers using normal assignment might can so lead to
+		// duplicate headers. Hence, we can remove them. (If this problem gets fixed in gorilla/websocket,
+		// these 5 lines become redundant, but will not break the current implementation)
+		requestHeader.Del("Connection")
+		requestHeader.Del("Sec-Websocket-Extensions")
+		requestHeader.Del("Sec-Websocket-Key")
+		requestHeader.Del("Sec-Websocket-Version")
+		requestHeader.Del("Upgrade")
+
+		// Remove all hop-by-hop headers
+		requestHeader.Del("Keep-Alive")
+		requestHeader.Del("Transfer-Encoding")
+		requestHeader.Del("TE")
+		requestHeader.Del("Trailer")
+		requestHeader.Del("Proxy-Authorization")
+		requestHeader.Del("Proxy-Authenticate")
+
+	} else { // default library behavior
+		requestHeader = http.Header{}
+
+		if origin := req.Header.Get("User-Agent"); origin != "" {
+			requestHeader.Add("User-Agent", origin)
+		}
+		if origin := req.Header.Get("Origin"); origin != "" {
+			requestHeader.Add("Origin", origin)
+		}
+		for _, prot := range req.Header[http.CanonicalHeaderKey("Sec-WebSocket-Protocol")] {
+			requestHeader.Add("Sec-WebSocket-Protocol", prot)
+		}
+		for _, cookie := range req.Header[http.CanonicalHeaderKey("Cookie")] {
+			requestHeader.Add("Cookie", cookie)
+		}
+		if req.Host != "" {
+			requestHeader.Set("Host", req.Host)
+		}
 	}
 
 	// Pass X-Forwarded-For headers too, code below is a part of
 	// httputil.ReverseProxy. See http://en.wikipedia.org/wiki/X-Forwarded-For
-	// for more information
-	// TODO: use RFC7239 http://tools.ietf.org/html/rfc7239
+	// for more information use RFC7239 http://tools.ietf.org/html/rfc7239
 	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
 		// If we aren't the first proxy retain prior
 		// X-Forwarded-For information as a comma+space
@@ -126,10 +133,10 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// Enable the director to copy any additional headers it desires for
 	// forwarding to the remote server.
 	if w.Director != nil {
-		w.Director(req, requestHeader)
+		w.Director.AdjustHeaders(req, requestHeader)
 	}
 
-	// Connect to the backend URL, also pass the headers we get from the requst
+	// Connect to the backend URL, also pass the headers we get from the request
 	// together with the Forwarded headers we prepared above.
 	// TODO: support multiplexing on the same backend connection instead of
 	// opening a new TCP connection time for each request. This should be
@@ -137,13 +144,13 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	// http://tools.ietf.org/html/draft-ietf-hybi-websocket-multiplexing-01
 	connBackend, resp, err := dialer.Dial(backendURL.String(), requestHeader)
 	if err != nil {
-		log.Printf("websocketproxy: couldn't dial to remote backend url %s", err)
+		klog.Errorf("websocketproxy: couldn't dial to remote backend url %s\n", err)
 		if resp != nil {
 			// If the WebSocket handshake fails, ErrBadHandshake is returned
 			// along with a non-nil *http.Response so that callers can handle
 			// redirects, authentication, etcetera.
 			if err := copyResponse(rw, resp); err != nil {
-				log.Printf("websocketproxy: couldn't write response after failed remote backend handshake: %s", err)
+				klog.Errorf("websocketproxy: couldn't write response after failed remote backend handshake: %s\n", err)
 			}
 		} else {
 			http.Error(rw, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
@@ -152,55 +159,133 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	}
 	defer connBackend.Close()
 
+	// using a custom upgrader?
 	upgrader := w.Upgrader
 	if w.Upgrader == nil {
 		upgrader = DefaultUpgrader
 	}
 
 	// Only pass those headers to the upgrader.
-	upgradeHeader := http.Header{}
-	if hdr := resp.Header.Get("Sec-Websocket-Protocol"); hdr != "" {
-		upgradeHeader.Set("Sec-Websocket-Protocol", hdr)
-	}
-	if hdr := resp.Header.Get("Set-Cookie"); hdr != "" {
-		upgradeHeader.Set("Set-Cookie", hdr)
+	var upgradeHeader http.Header
+
+	// enable more of a passthrough proxy
+	if w.options.NaturalTunnel {
+		upgradeHeader := req.Header.Clone()
+
+		/*
+			Please see: https://github.com/koding/websocketproxy/pull/44/
+		*/
+		// gorilla/websocket automatically adds these headers back when Dial() is called, but it never
+		// uses Set(), rather it sets these headers using normal assignment might can so lead to
+		// duplicate headers. Hence, we can remove them. (If this problem gets fixed in gorilla/websocket,
+		// these 5 lines become redundant, but will not break the current implementation)
+		upgradeHeader.Del("Connection")
+		upgradeHeader.Del("Sec-Websocket-Extensions")
+		upgradeHeader.Del("Sec-Websocket-Key")
+		upgradeHeader.Del("Sec-Websocket-Version")
+		upgradeHeader.Del("Upgrade")
+
+		// Remove all hop-by-hop headers
+		upgradeHeader.Del("Keep-Alive")
+		upgradeHeader.Del("Transfer-Encoding")
+		upgradeHeader.Del("TE")
+		upgradeHeader.Del("Trailer")
+		upgradeHeader.Del("Proxy-Authorization")
+		upgradeHeader.Del("Proxy-Authenticate")
+	} else { // default library behavior
+		upgradeHeader = http.Header{}
+
+		if hdr := resp.Header.Get("Sec-Websocket-Protocol"); hdr != "" {
+			upgradeHeader.Set("Sec-Websocket-Protocol", hdr)
+		}
+		if hdr := resp.Header.Get("Set-Cookie"); hdr != "" {
+			upgradeHeader.Set("Set-Cookie", hdr)
+		}
+		/*
+			Please see: https://github.com/koding/websocketproxy/pull/40/
+			when using more than one wss proxy, need add Sec-Websocket-Accept header
+		*/
+		if hdr := resp.Header.Get("Sec-Websocket-Accept"); hdr != "" {
+			upgradeHeader.Set("Sec-Websocket-Accept", hdr)
+		}
 	}
 
 	// Now upgrade the existing incoming request to a WebSocket connection.
 	// Also pass the header that we gathered from the Dial handshake.
 	connPub, err := upgrader.Upgrade(rw, req, upgradeHeader)
 	if err != nil {
-		log.Printf("websocketproxy: couldn't upgrade %s", err)
+		klog.Errorf("websocketproxy: couldn't upgrade %s\n", err)
 		return
 	}
 	defer connPub.Close()
 
 	errClient := make(chan error, 1)
 	errBackend := make(chan error, 1)
-	replicateWebsocketConn := func(dst, src *websocket.Conn, errc chan error) {
+	replicateWebsocketConn := func(dst, src *websocket.Conn, errc chan error, stopChan chan struct{}) {
 		for {
-			msgType, msg, err := src.ReadMessage()
-			if err != nil {
-				m := websocket.FormatCloseMessage(websocket.CloseNormalClosure, fmt.Sprintf("%v", err))
-				if e, ok := err.(*websocket.CloseError); ok {
-					if e.Code != websocket.CloseNoStatusReceived {
-						m = websocket.FormatCloseMessage(e.Code, e.Text)
+			/*
+				Please see: https://github.com/koding/websocketproxy/pull/36
+				Useful when implementing authenticated proxy.
+			*/
+			// do until stopChan gets any message
+			doExit := false
+			select {
+			default:
+				msgType, msg, err := src.ReadMessage()
+				if err != nil {
+					m := websocket.FormatCloseMessage(websocket.CloseNormalClosure, fmt.Sprintf("%v", err))
+					if e, ok := err.(*websocket.CloseError); ok {
+						if e.Code != websocket.CloseNoStatusReceived {
+							m = websocket.FormatCloseMessage(e.Code, e.Text)
+						}
 					}
+					errc <- err
+					dst.WriteMessage(websocket.CloseMessage, m)
+					break
 				}
-				errc <- err
-				dst.WriteMessage(websocket.CloseMessage, m)
-				break
+
+				// we only care about the messages and not the raw data
+				if msgType == 1 && w.Viewer != nil {
+					w.Viewer.HandleMessage(msg)
+				}
+
+				err = dst.WriteMessage(msgType, msg)
+				if err != nil {
+					errc <- err
+					doExit = true
+				}
+			case <-stopChan:
+				dst.WriteMessage(websocket.CloseMessage, []byte("Closed by proxy"))
+				return
 			}
-			err = dst.WriteMessage(msgType, msg)
-			if err != nil {
-				errc <- err
+			if doExit {
 				break
 			}
 		}
 	}
 
-	go replicateWebsocketConn(connPub, connBackend, errClient)
-	go replicateWebsocketConn(connBackend, connPub, errBackend)
+	/*
+		Please see: https://github.com/koding/websocketproxy/pull/43
+		Send a Ping message to the backend connection whenever a Ping is received.
+	*/
+	connPub.SetPingHandler(func(appData string) error {
+		err := connBackend.WriteControl(websocket.PingMessage, []byte(appData), time.Now().Add(time.Second))
+		if err != nil {
+			return err
+		}
+
+		// default behavior from https://github.com/gorilla/websocket/blob/v1.5.0/conn.go#L1161-L1167
+		err = connPub.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(time.Second))
+		if err == websocket.ErrCloseSent {
+			return nil
+		} else if e, ok := err.(net.Error); ok && e.Temporary() {
+			return nil
+		}
+		return err
+	})
+
+	go replicateWebsocketConn(connPub, connBackend, errClient, w.stopClientChan)
+	go replicateWebsocketConn(connBackend, connPub, errBackend, w.stopBackendChan)
 
 	var message string
 	select {
@@ -211,8 +296,14 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	}
 	if e, ok := err.(*websocket.CloseError); !ok || e.Code == websocket.CloseAbnormalClosure {
-		log.Printf(message, err)
+		klog.Errorf("message: %s, err: %v\n", message, err)
 	}
+}
+
+// Stop websocket proxy on demand
+func (w *WebsocketProxy) CloseProxy() {
+	close(w.stopBackendChan)
+	close(w.stopClientChan)
 }
 
 func copyHeader(dst, src http.Header) {
