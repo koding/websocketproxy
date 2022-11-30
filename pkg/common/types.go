@@ -6,7 +6,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/koding/websocketproxy/interfaces"
+	"github.com/koding/websocketproxy/pkg/interfaces"
 )
 
 // ProxyOptions these are the available options for a Proxy
