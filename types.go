@@ -10,6 +10,10 @@ import (
 	"github.com/koding/websocketproxy/interfaces"
 )
 
+// ProxyHandler returns a new http.Handler interface that reverse proxies the
+// request to the given target.
+func ProxyHandler(options ProxyOptions) http.Handler { return NewProxy(options) }
+
 // ProxyOptions these are the available options for a Proxy
 type ProxyOptions struct {
 	Url           *url.URL

@@ -14,13 +14,9 @@ import (
 	klog "k8s.io/klog/v2"
 )
 
-// ProxyHandler returns a new http.Handler interface that reverse proxies the
-// request to the given target.
-func ProxyHandler(options ProxyOptions) http.Handler { return NewProxy(options) }
-
-// NewProxy returns a new Websocket reverse proxy that rewrites the
+// NewFullDuplexProxy returns a new Websocket reverse proxy that rewrites the
 // URL's to the scheme, host and base path provider in target.
-func NewProxy(options ProxyOptions) *WebsocketProxy {
+func NewFullDuplexProxy(options ProxyOptions) *WebsocketProxy {
 	backend := func(r *http.Request) *url.URL {
 		// Shallow copy
 		u := options.Url
