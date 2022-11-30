@@ -1,4 +1,3 @@
-// Package websocketproxy is a reverse proxy for WebSocket connections.
 package websocketproxy
 
 import (

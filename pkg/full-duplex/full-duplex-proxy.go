@@ -1,26 +1,52 @@
-// Package websocketproxy is a reverse proxy for WebSocket connections.
-package websocketproxy
+package fullduplexproxy
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 	klog "k8s.io/klog/v2"
+
+	common "github.com/koding/websocketproxy/pkg/common"
 )
 
-// ServeFullDuplexProxy implements the http.Handler that proxies WebSocket connections.
-func (w *WebsocketProxy) ServeFullDuplexProxy(rw http.ResponseWriter, req *http.Request) {
-	if w.backend == nil {
-		klog.Errorf("websocketproxy: backend function is not defined\n")
+// NewProxy returns a new Websocket reverse proxy that rewrites the
+// URL's to the scheme, host and base path provider in target.
+func NewProxy(options common.ProxyOptions) *FullDuplexWebsocketProxy {
+	backend := func(r *http.Request) *url.URL {
+		// Shallow copy
+		u := options.Url
+		u.Fragment = r.URL.Fragment
+		u.Path = r.URL.Path
+		u.RawQuery = r.URL.RawQuery
+		return u
+	}
+	return &FullDuplexWebsocketProxy{
+		&common.WebsocketProxy{
+			Director: options.Director,
+			Viewer:   options.Viewer,
+			Upgrader: options.Upgrader,
+			Dialer:   options.Dialer,
+			Backend:  backend,
+			Options:  options,
+		},
+	}
+}
+
+// ServeHTTP implements the http.Handler that proxies WebSocket connections.
+func (w *FullDuplexWebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	if w.Backend == nil {
+		klog.Errorf("websocketproxy: Backend function is not defined\n")
 		http.Error(rw, "internal server error (code: 1)", http.StatusInternalServerError)
 		return
 	}
 
-	backendURL := w.backend(req)
+	backendURL := w.Backend(req)
 	if backendURL == nil {
 		klog.Errorf("websocketproxy: backend URL is nil\n")
 		http.Error(rw, "internal server error (code: 2)", http.StatusInternalServerError)
@@ -30,7 +56,7 @@ func (w *WebsocketProxy) ServeFullDuplexProxy(rw http.ResponseWriter, req *http.
 	// using a custom dialer?
 	dialer := w.Dialer
 	if w.Dialer == nil {
-		dialer = DefaultDialer
+		dialer = common.DefaultDialer
 	}
 
 	// Pass headers from the incoming request to the dialer to forward them to
@@ -38,7 +64,7 @@ func (w *WebsocketProxy) ServeFullDuplexProxy(rw http.ResponseWriter, req *http.
 	var requestHeader http.Header
 
 	// enable more of a passthrough proxy
-	if w.options.NaturalTunnel {
+	if w.Options.NaturalTunnel {
 		requestHeader = req.Header.Clone()
 
 		/*
@@ -135,14 +161,14 @@ func (w *WebsocketProxy) ServeFullDuplexProxy(rw http.ResponseWriter, req *http.
 	// using a custom upgrader?
 	upgrader := w.Upgrader
 	if w.Upgrader == nil {
-		upgrader = DefaultUpgrader
+		upgrader = common.DefaultUpgrader
 	}
 
 	// Only pass those headers to the upgrader.
 	var upgradeHeader http.Header
 
 	// enable more of a passthrough proxy
-	if w.options.NaturalTunnel {
+	if w.Options.NaturalTunnel {
 		upgradeHeader := req.Header.Clone()
 
 		/*
@@ -257,8 +283,8 @@ func (w *WebsocketProxy) ServeFullDuplexProxy(rw http.ResponseWriter, req *http.
 		return err
 	})
 
-	go replicateWebsocketConn(connPub, connBackend, errClient, w.stopClientChan)
-	go replicateWebsocketConn(connBackend, connPub, errBackend, w.stopBackendChan)
+	go replicateWebsocketConn(connPub, connBackend, errClient, w.StopClientChan)
+	go replicateWebsocketConn(connBackend, connPub, errBackend, w.StopBackendChan)
 
 	var message string
 	select {
@@ -271,4 +297,27 @@ func (w *WebsocketProxy) ServeFullDuplexProxy(rw http.ResponseWriter, req *http.
 	if e, ok := err.(*websocket.CloseError); !ok || e.Code == websocket.CloseAbnormalClosure {
 		klog.Errorf("message: %s, err: %v\n", message, err)
 	}
+}
+
+// Stop websocket proxy on demand
+func (w *FullDuplexWebsocketProxy) CloseProxy() {
+	close(w.StopBackendChan)
+	close(w.StopClientChan)
+}
+
+func copyHeader(dst, src http.Header) {
+	for k, vv := range src {
+		for _, v := range vv {
+			dst.Add(k, v)
+		}
+	}
+}
+
+func copyResponse(rw http.ResponseWriter, resp *http.Response) error {
+	copyHeader(rw.Header(), resp.Header)
+	rw.WriteHeader(resp.StatusCode)
+	defer resp.Body.Close()
+
+	_, err := io.Copy(rw, resp.Body)
+	return err
 }

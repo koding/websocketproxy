@@ -1,5 +1,4 @@
-// Package websocketproxy is a reverse proxy for WebSocket connections.
-package websocketproxy
+package common
 
 import (
 	"github.com/gorilla/websocket"

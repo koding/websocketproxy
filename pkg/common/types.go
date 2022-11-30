@@ -1,5 +1,4 @@
-// Package websocketproxy is a reverse proxy for WebSocket connections.
-package websocketproxy
+package common
 
 import (
 	"net/http"
@@ -42,14 +41,14 @@ type WebsocketProxy struct {
 	Dialer *websocket.Dialer
 
 	// ProxyOptions describe how to initialize the Proxy
-	options ProxyOptions
+	Options ProxyOptions
 
 	// Backend returns the backend URL which the proxy uses to reverse proxy
 	// the incoming WebSocket connection. Request is the initial incoming and
 	// unmodified request.
-	backend func(*http.Request) *url.URL
+	Backend func(*http.Request) *url.URL
 
 	// Stop channels to close the websocket on demand
-	stopClientChan  chan struct{}
-	stopBackendChan chan struct{}
+	StopClientChan  chan struct{}
+	StopBackendChan chan struct{}
 }
