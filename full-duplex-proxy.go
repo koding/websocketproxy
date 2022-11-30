@@ -3,10 +3,8 @@ package websocketproxy
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -14,29 +12,8 @@ import (
 	klog "k8s.io/klog/v2"
 )
 
-// NewFullDuplexProxy returns a new Websocket reverse proxy that rewrites the
-// URL's to the scheme, host and base path provider in target.
-func NewFullDuplexProxy(options ProxyOptions) *WebsocketProxy {
-	backend := func(r *http.Request) *url.URL {
-		// Shallow copy
-		u := options.Url
-		u.Fragment = r.URL.Fragment
-		u.Path = r.URL.Path
-		u.RawQuery = r.URL.RawQuery
-		return u
-	}
-	return &WebsocketProxy{
-		Director: options.Director,
-		Viewer:   options.Viewer,
-		Upgrader: options.Upgrader,
-		Dialer:   options.Dialer,
-		backend:  backend,
-		options:  options,
-	}
-}
-
-// ServeHTTP implements the http.Handler that proxies WebSocket connections.
-func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+// ServeFullDuplexProxy implements the http.Handler that proxies WebSocket connections.
+func (w *WebsocketProxy) ServeFullDuplexProxy(rw http.ResponseWriter, req *http.Request) {
 	if w.backend == nil {
 		klog.Errorf("websocketproxy: backend function is not defined\n")
 		http.Error(rw, "internal server error (code: 1)", http.StatusInternalServerError)
@@ -294,27 +271,4 @@ func (w *WebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	if e, ok := err.(*websocket.CloseError); !ok || e.Code == websocket.CloseAbnormalClosure {
 		klog.Errorf("message: %s, err: %v\n", message, err)
 	}
-}
-
-// Stop websocket proxy on demand
-func (w *WebsocketProxy) CloseProxy() {
-	close(w.stopBackendChan)
-	close(w.stopClientChan)
-}
-
-func copyHeader(dst, src http.Header) {
-	for k, vv := range src {
-		for _, v := range vv {
-			dst.Add(k, v)
-		}
-	}
-}
-
-func copyResponse(rw http.ResponseWriter, resp *http.Response) error {
-	copyHeader(rw.Header(), resp.Header)
-	rw.WriteHeader(resp.StatusCode)
-	defer resp.Body.Close()
-
-	_, err := io.Copy(rw, resp.Body)
-	return err
 }
