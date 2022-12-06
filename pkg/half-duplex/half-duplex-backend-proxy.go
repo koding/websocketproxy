@@ -315,6 +315,8 @@ func (w *HalfDuplexWebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.R
 		return err
 	})
 
+	w.WebsocketProxy.Connected = true
+
 	go replicateWebsocketClientToProxy(connPub, connBackend, errClient, w.StopClientChan)
 	go replicateWebsocketProxyToServer(connBackend, connPub, errBackend, w.StopBackendChan)
 
@@ -329,6 +331,13 @@ func (w *HalfDuplexWebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.R
 	if e, ok := err.(*websocket.CloseError); !ok || e.Code == websocket.CloseAbnormalClosure {
 		klog.Errorf("message: %s, err: %v\n", message, err)
 	}
+
+	w.WebsocketProxy.Connected = false
+}
+
+// IsConnected
+func (w *HalfDuplexWebsocketProxy) IsConnected() bool {
+	return w.WebsocketProxy.Connected
 }
 
 // Stop websocket proxy on demand

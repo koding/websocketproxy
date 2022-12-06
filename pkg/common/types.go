@@ -51,4 +51,7 @@ type WebsocketProxy struct {
 	// Stop channels to close the websocket on demand
 	StopClientChan  chan struct{}
 	StopBackendChan chan struct{}
+
+	// Is connected?
+	Connected bool
 }
