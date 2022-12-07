@@ -28,8 +28,10 @@ func NewProxy(options common.ProxyOptions) *HalfDuplexWebsocketProxy {
 	}
 	return &HalfDuplexWebsocketProxy{
 		&common.WebsocketProxy{
+			UniqueId: options.UniqueID,
 			Director: options.Director,
 			Viewer:   options.Viewer,
+			Manager:  options.Manager,
 			Upgrader: options.Upgrader,
 			Dialer:   options.Dialer,
 			Backend:  backend,
@@ -333,6 +335,10 @@ func (w *HalfDuplexWebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.R
 	}
 
 	w.WebsocketProxy.Connected = false
+
+	if w.Manager != nil && len(w.WebsocketProxy.UniqueId) > 0 {
+		w.Manager.RemoveConnection(w.UniqueId)
+	}
 }
 
 // IsConnected

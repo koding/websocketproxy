@@ -11,6 +11,7 @@ import (
 
 // ProxyOptions these are the available options for a Proxy
 type ProxyOptions struct {
+	UniqueID      string
 	Url           *url.URL
 	NaturalTunnel bool
 	Upgrader      *websocket.Upgrader
@@ -18,6 +19,7 @@ type ProxyOptions struct {
 
 	Director interfaces.DirectorCallback
 	Viewer   interfaces.MessageCallback
+	Manager  interfaces.ManageCallback
 }
 
 // WebsocketProxy is an HTTP Handler that takes an incoming WebSocket
@@ -31,6 +33,9 @@ type WebsocketProxy struct {
 	// Viewer, if non-nil, is a function that may view messages as they comeback
 	// to the originating client
 	Viewer interfaces.MessageCallback
+
+	// Manager, if non-nil, is a function that may manage this proxy
+	Manager interfaces.ManageCallback
 
 	// Upgrader specifies the parameters for upgrading a incoming HTTP
 	// connection to a WebSocket connection. If nil, DefaultUpgrader is used.
@@ -54,4 +59,7 @@ type WebsocketProxy struct {
 
 	// Is connected?
 	Connected bool
+
+	// UniqueID
+	UniqueId string
 }

@@ -5,6 +5,11 @@ import (
 	"net/http"
 )
 
+// ManageCallback is a callback to manage connections
+type ManageCallback interface {
+	RemoveConnection(uniqueId string)
+}
+
 // MessageCallback is a callback to view messages as they passthrough the proxy
 type MessageCallback interface {
 	HandleMessage(byMsg []byte) error
