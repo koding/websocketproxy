@@ -37,6 +37,8 @@ func NewProxy(options common.ProxyOptions) *FullDuplexWebsocketProxy {
 			Backend:  backend,
 			Options:  options,
 		},
+		nil,
+		nil,
 	}
 }
 
@@ -158,7 +160,6 @@ func (w *FullDuplexWebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.R
 		}
 		return
 	}
-	defer connBackend.Close()
 
 	// using a custom upgrader?
 	upgrader := w.Upgrader
@@ -218,11 +219,52 @@ func (w *FullDuplexWebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.R
 		klog.Errorf("websocketproxy: couldn't upgrade %s\n", err)
 		return
 	}
-	defer connPub.Close()
+
+	// save the connections
+	w.ToBackend = connBackend
+	w.ToClient = connPub
 
 	errClient := make(chan error, 1)
 	errBackend := make(chan error, 1)
-	replicateWebsocketConn := func(dst, src *websocket.Conn, errc chan error, stopChan chan struct{}) {
+	replicateWebsocketProxyToServer := func(dst, src *websocket.Conn, errc chan error, stopChan chan struct{}) {
+		for {
+			/*
+				Please see: https://github.com/koding/websocketproxy/pull/36
+				Useful when implementing authenticated proxy.
+			*/
+			// do until stopChan gets any message
+			doExit := false
+			select {
+			default:
+				msgType, msg, err := src.ReadMessage()
+				if err != nil {
+					m := websocket.FormatCloseMessage(websocket.CloseNormalClosure, fmt.Sprintf("%v", err))
+					if e, ok := err.(*websocket.CloseError); ok {
+						if e.Code != websocket.CloseNoStatusReceived {
+							m = websocket.FormatCloseMessage(e.Code, e.Text)
+						}
+					}
+					errc <- err
+					dst.WriteMessage(websocket.CloseMessage, m)
+					break
+				}
+
+				err = dst.WriteMessage(msgType, msg)
+				if err != nil {
+					errc <- err
+					doExit = true
+				}
+			case <-stopChan:
+				dst.WriteMessage(websocket.CloseMessage, []byte("Closed by proxy"))
+				return
+			}
+			if doExit {
+				break
+			}
+		}
+	}
+
+	replicateWebsocketClientToProxy := func(dst, src *websocket.Conn, errc chan error, stopChan chan struct{}) {
 		for {
 			/*
 				Please see: https://github.com/koding/websocketproxy/pull/36
@@ -287,8 +329,8 @@ func (w *FullDuplexWebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.R
 
 	w.WebsocketProxy.Connected = true
 
-	go replicateWebsocketConn(connPub, connBackend, errClient, w.StopClientChan)
-	go replicateWebsocketConn(connBackend, connPub, errBackend, w.StopBackendChan)
+	go replicateWebsocketProxyToServer(connPub, connBackend, errClient, w.StopClientChan)
+	go replicateWebsocketClientToProxy(connBackend, connPub, errBackend, w.StopBackendChan)
 
 	var message string
 	select {
@@ -309,6 +351,25 @@ func (w *FullDuplexWebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.R
 	}
 }
 
+// SendMessageByType To Client/Browser
+func (w *FullDuplexWebsocketProxy) SendMessage(data []byte) error {
+	return w.SendMessageByType(common.MessageTypeControl, data)
+}
+
+// SendMessageByType To Client/Browser
+func (w *FullDuplexWebsocketProxy) SendMessageByType(msgType int, data []byte) error {
+	if w.ToClient == nil {
+		return common.ErrConnectionNotEstablished
+	}
+
+	err := w.ToClient.WriteMessage(msgType, data)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // IsConnected
 func (w *FullDuplexWebsocketProxy) IsConnected() bool {
 	return w.WebsocketProxy.Connected
@@ -316,6 +377,15 @@ func (w *FullDuplexWebsocketProxy) IsConnected() bool {
 
 // Stop websocket proxy on demand
 func (w *FullDuplexWebsocketProxy) CloseProxy() {
+	if w.ToBackend != nil {
+		w.ToBackend.Close()
+		w.ToBackend = nil
+	}
+	if w.ToClient != nil {
+		w.ToClient.Close()
+		w.ToClient = nil
+	}
+
 	close(w.StopBackendChan)
 	close(w.StopClientChan)
 }

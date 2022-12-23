@@ -1,7 +1,15 @@
 package common
 
 import (
+	"errors"
+
 	"github.com/gorilla/websocket"
+)
+
+const (
+	MessageTypeUnknown int = iota
+	MessageTypeControl
+	MessageTypeData
 )
 
 var (
@@ -14,4 +22,7 @@ var (
 
 	// DefaultDialer is a dialer with all fields set to the default zero values.
 	DefaultDialer = websocket.DefaultDialer
+
+	// ErrConnectionNotEstablished connection not established
+	ErrConnectionNotEstablished = errors.New("connection not established")
 )

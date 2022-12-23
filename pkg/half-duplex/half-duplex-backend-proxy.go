@@ -37,6 +37,8 @@ func NewProxy(options common.ProxyOptions) *HalfDuplexWebsocketProxy {
 			Backend:  backend,
 			Options:  options,
 		},
+		nil,
+		nil,
 	}
 }
 
@@ -158,7 +160,6 @@ func (w *HalfDuplexWebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.R
 		}
 		return
 	}
-	defer connBackend.Close()
 
 	// using a custom upgrader?
 	upgrader := w.Upgrader
@@ -218,8 +219,12 @@ func (w *HalfDuplexWebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.R
 		klog.Errorf("websocketproxy: couldn't upgrade %s\n", err)
 		return
 	}
-	defer connPub.Close()
 
+	// save the connections
+	w.ToBackend = connBackend
+	w.ToClient = connPub
+
+	// worker threads
 	errClient := make(chan error, 1)
 	errBackend := make(chan error, 1)
 	replicateWebsocketProxyToServer := func(dst, src *websocket.Conn, errc chan error, stopChan chan struct{}) {
@@ -341,6 +346,25 @@ func (w *HalfDuplexWebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.R
 	}
 }
 
+// SendMessageByType To Client/Browser
+func (w *HalfDuplexWebsocketProxy) SendMessage(data []byte) error {
+	return w.SendMessageByType(common.MessageTypeControl, data)
+}
+
+// SendMessageByType To Client/Browser
+func (w *HalfDuplexWebsocketProxy) SendMessageByType(msgType int, data []byte) error {
+	if w.ToClient == nil {
+		return common.ErrConnectionNotEstablished
+	}
+
+	err := w.ToClient.WriteMessage(msgType, data)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // IsConnected
 func (w *HalfDuplexWebsocketProxy) IsConnected() bool {
 	return w.WebsocketProxy.Connected
@@ -348,6 +372,15 @@ func (w *HalfDuplexWebsocketProxy) IsConnected() bool {
 
 // Stop websocket proxy on demand
 func (w *HalfDuplexWebsocketProxy) CloseProxy() {
+	if w.ToBackend != nil {
+		w.ToBackend.Close()
+		w.ToBackend = nil
+	}
+	if w.ToClient != nil {
+		w.ToClient.Close()
+		w.ToClient = nil
+	}
+
 	close(w.StopBackendChan)
 	close(w.StopClientChan)
 }
