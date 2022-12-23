@@ -348,7 +348,7 @@ func (w *HalfDuplexWebsocketProxy) ServeHTTP(rw http.ResponseWriter, req *http.R
 
 // SendMessageByType To Client/Browser
 func (w *HalfDuplexWebsocketProxy) SendMessage(data []byte) error {
-	return w.SendMessageByType(common.MessageTypeControl, data)
+	return w.SendMessageByType(common.MessageTypeUserDefined, data)
 }
 
 // SendMessageByType To Client/Browser
