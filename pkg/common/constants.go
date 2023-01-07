@@ -10,7 +10,6 @@ const (
 	MessageTypeUnknown int = iota
 	MessageTypeControl
 	MessageTypeData
-	MessageTypeUserDefined
 )
 
 var (
