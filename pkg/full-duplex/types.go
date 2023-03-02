@@ -1,8 +1,9 @@
 package fullduplexproxy
 
 import (
-	websocket "github.com/gorilla/websocket"
-	common "github.com/koding/websocketproxy/pkg/common"
+	websocket "github.com/dvonthenen/websocket"
+
+	common "github.com/dvonthenen/websocketproxy/pkg/common"
 )
 
 // FullDuplexWebsocketProxy

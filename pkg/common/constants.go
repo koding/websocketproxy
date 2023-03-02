@@ -3,7 +3,7 @@ package common
 import (
 	"errors"
 
-	"github.com/gorilla/websocket"
+	"github.com/dvonthenen/websocket"
 )
 
 const (

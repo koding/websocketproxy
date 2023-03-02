@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/gorilla/websocket"
+	"github.com/dvonthenen/websocket"
 
-	"github.com/koding/websocketproxy/pkg/interfaces"
+	"github.com/dvonthenen/websocketproxy/pkg/interfaces"
 )
 
 // ProxyOptions these are the available options for a Proxy
