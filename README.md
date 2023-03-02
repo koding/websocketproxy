@@ -1,7 +1,7 @@
 # WebsocketProxy [![GoDoc](https://godoc.org/github.com/dvonthenen/websocketproxy?status.svg)](https://godoc.org/github.com/dvonthenen/websocketproxy) [![Build Status](https://travis-ci.org/dvonthenen/websocketproxy.svg)](https://travis-ci.org/dvonthenen/websocketproxy)
 
 WebsocketProxy is an http.Handler interface build on top of
-[gorilla/dvonthenen](https://github.com/gorilla/dvonthenen) that you can plug
+[dvonthenen/websocket](https://github.com/dvonthenen/websocket) that you can plug
 into your existing Go webserver to provide WebSocket reverse proxy.
 
 ## Install
