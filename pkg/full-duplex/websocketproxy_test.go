@@ -1,4 +1,4 @@
-package websocketproxy
+package fullduplexproxy
 
 import (
 	"log"
@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/dvonthenen/websocket"
 )
 
 var (
@@ -46,7 +46,7 @@ func TestProxy(t *testing.T) {
 		mux2 := http.NewServeMux()
 		mux2.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			// Don't upgrade if original host header isn't preserved
-			if r.Host !=  "127.0.0.1:7777" {
+			if r.Host != "127.0.0.1:7777" {
 				log.Printf("Host header set incorrectly.  Expecting 127.0.0.1:7777 got %s", r.Host)
 				return
 			}
