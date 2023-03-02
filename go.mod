@@ -9,4 +9,4 @@ require (
 
 require github.com/go-logr/logr v1.2.0 // indirect
 
-// replace github.com/gorilla/websocket => ../../gorilla/websocket
+// replace github.com/dvonthenen/websocket => ../../dvonthenen/websocket
