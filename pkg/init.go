@@ -15,8 +15,9 @@ const (
 	LogLevelStandard           = 2
 	LogLevelElevated           = 3
 	LogLevelFull               = 4
-	LogLevelTrace              = 5
-	LogLevelVerbose            = 6
+	LogLevelDebug              = 5
+	LogLevelTrace              = 6
+	LogLevelVerbose            = 7
 )
 
 type WekSocketProxyInit struct {
