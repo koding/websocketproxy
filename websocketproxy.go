@@ -2,6 +2,7 @@
 package websocketproxy
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -23,6 +24,8 @@ var (
 
 	// DefaultDialer is a dialer with all fields set to the default zero values.
 	DefaultDialer = websocket.DefaultDialer
+
+	errNilChannelClose = errors.New("trying to close nil channel")
 )
 
 // WebsocketProxy is an HTTP Handler that takes an incoming WebSocket
@@ -70,9 +73,19 @@ func NewProxy(target *url.URL) *WebsocketProxy {
 }
 
 // Stop websocket proxy on demand
-func (w *WebsocketProxy) CloseProxy() {
-	close(w.stopBackendChan)
-	close(w.stopClientChan)
+func (w *WebsocketProxy) CloseProxy() (err error) {
+	err = nil
+	if w.stopBackendChan != nil {
+		close(w.stopBackendChan)
+	} else {
+		err = errNilChannelClose
+	}
+	if w.stopClientChan != nil {
+		close(w.stopClientChan)
+	} else {
+		err = errNilChannelClose
+	}
+	return err
 }
 
 // ServeHTTP implements the http.Handler that proxies WebSocket connections.
